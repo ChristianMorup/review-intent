@@ -3,7 +3,11 @@ import type { DiffFile, DiffHunk, DiffLine } from "./types.js";
 
 /** Parse raw unified diff text into a structured, render-friendly model. */
 export function parseDiffText(raw: string): DiffFile[] {
-  const files = parseDiff(raw);
+  // Normalize CRLF -> LF first: `git diff` on a Windows repo with CRLF files
+  // emits CRLF, which leaves a trailing \r on every content line and breaks
+  // parse-diff's header detection (e.g. "new file mode\r"), mis-classifying an
+  // added file as renamed. Parse against LF regardless of source line endings.
+  const files = parseDiff(raw.replace(/\r\n/g, "\n"));
 
   return files.map((f): DiffFile => {
     const path = (f.deleted ? f.from : f.to) ?? f.from ?? f.to ?? "(unknown)";

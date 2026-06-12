@@ -1,0 +1,4 @@
+# Normalize line endings: store LF in the repo, check out LF everywhere.
+# Keeps test fixtures byte-identical across platforms so CRLF on a Windows
+# checkout can't corrupt the diff-parser fixtures.
+* text=auto eol=lf

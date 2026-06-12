@@ -45,4 +45,16 @@ describe("parseDiffText", () => {
     expect(adds[0].newNumber).toBe(1);
     expect(adds[1].newNumber).toBe(2);
   });
+
+  it("parses CRLF diff output identically to LF (Windows git diff)", () => {
+    const crlf = parseDiffText(raw.replace(/\n/g, "\r\n"));
+    expect(crlf).toHaveLength(2);
+    // status detection must not be fooled by \r on header lines
+    expect(crlf[1].status).toBe("added");
+    // content must not retain a trailing carriage return
+    const firstHunk = crlf[0].hunks[0];
+    const deleted = firstHunk.lines.filter((l) => l.type === "del");
+    expect(deleted[0].content).toBe('  return "Hi " + name;');
+    expect(firstHunk.lines.every((l) => !l.content.endsWith("\r"))).toBe(true);
+  });
 });

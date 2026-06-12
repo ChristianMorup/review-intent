@@ -1,0 +1,22 @@
+diff --git a/src/greet.ts b/src/greet.ts
+index 1111111..2222222 100644
+--- a/src/greet.ts
++++ b/src/greet.ts
+@@ -1,3 +1,4 @@
+ export function greet(name: string) {
+-  return "Hi " + name;
++  // friendlier, and trims stray whitespace
++  return `Hello, ${name.trim()}!`;
+ }
+@@ -10,2 +11,3 @@ export function farewell(name: string) {
+   return "Bye " + name;
++  // TODO: localize
+ }
+diff --git a/src/new.ts b/src/new.ts
+new file mode 100644
+index 0000000..3333333
+--- /dev/null
++++ b/src/new.ts
+@@ -0,0 +1,2 @@
++export const VERSION = "1.0.0";
++export const NAME = "review-intent";

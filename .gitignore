@@ -1,0 +1,8 @@
+node_modules/
+dist/
+sample-output.html
+*.log
+.DS_Store
+coverage/
+.vitest-cache/
+.claude/settings.local.json

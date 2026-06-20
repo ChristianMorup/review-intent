@@ -6,3 +6,7 @@ sample-output.html
 coverage/
 .vitest-cache/
 .claude/settings.local.json
+
+# Demo app is its own git repo, scaffolded by demo/capture
+demo/widget-api/
+demo/out/

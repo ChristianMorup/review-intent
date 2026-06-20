@@ -37,6 +37,8 @@ export function renderHtml(model: ReviewModel): string {
 
 ${renderVitals(model)}
 
+${renderReviewFirst(ranked)}
+
 ${renderFileIndex(ranked)}
 
 ${renderBlastRadius(model)}
@@ -880,6 +882,29 @@ function fileBadges(r: RankedFile): string {
   if (r.missingIntent)
     b.push(`<span class="fbadge fbadge-gap" title="some of this file has no written intent">⚠ intent</span>`);
   return `<span class="fbadges">${b.join("")}</span>`;
+}
+
+/** Actionable triage: the up-to-three files most worth a reviewer's first pass,
+ *  each with the measured reasons it surfaced. Empty when nothing stands out. */
+function renderReviewFirst(ranked: RankedFile[]): string {
+  const top = ranked.filter((r) => r.score > 0).slice(0, 3);
+  if (top.length === 0) return "";
+  const card = (r: RankedFile) => {
+    const reasons: string[] = [];
+    if (r.churn > 0) reasons.push(`${r.churn} lines`);
+    if (r.fanIn > 0) reasons.push(`imported by ${r.fanIn}`);
+    if (r.hotspot) reasons.push(`CCN ${r.maxCcn}`);
+    if (r.missingIntent) reasons.push(`no intent`);
+    return `<a class="rf-card" href="#${r.slug}">
+      <span class="rf-rank">#${r.rank}</span>
+      <code class="rf-path">${esc(shortPath(r.path, 40))}</code>
+      <span class="rf-reasons">${reasons.map((x) => `<span>${esc(x)}</span>`).join("")}</span>
+    </a>`;
+  };
+  return `<section class="review-first">
+  <h2>Review first</h2>
+  <div class="rf-cards">${top.map(card).join("")}</div>
+</section>`;
 }
 
 /** The spine: every changed file as a clickable row, in review-priority order,

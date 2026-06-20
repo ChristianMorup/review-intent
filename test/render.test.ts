@@ -258,6 +258,15 @@ describe("renderHtml", () => {
     expect(tests).toContain(">integration<");
   });
 
+  it("renders a 'review first' callout naming the top-ranked file and its reasons", () => {
+    expect(html).toContain('class="review-first"');
+    const rf = html.slice(html.indexOf('class="review-first"'));
+    expect(rf).toContain("Review first");
+    expect(rf).toContain('href="#file-0"');
+    expect(rf).toContain("a.ts");
+    expect(rf).toContain("CCN 21"); // the hotspot reason
+  });
+
   it("renders a clickable, review-ordered file index", () => {
     expect(html).toContain('class="file-index"');
     const idx = html.slice(html.indexOf('class="file-index"'));

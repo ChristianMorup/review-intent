@@ -1151,13 +1151,17 @@ body {
 
 /* ── Vitals: the at-a-glance overview spine ── */
 .vitals {
-  display: flex; flex-wrap: wrap; gap: 0; padding-top: 26px; padding-bottom: 26px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 1px; background: var(--line); background-clip: content-box;
+  padding-top: 26px; padding-bottom: 26px;
 }
+/* Cells sit on the paper; the 1px grid gap reveals the container's line colour
+   as a hairline between every cell — clean dividers at any column count, no
+   stray edge borders when the grid wraps (the old flex-wrap left those). */
 .vital {
-  flex: 1 1 auto; min-width: 120px; padding: 4px 26px;
-  border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px;
+  min-width: 0; padding: 6px 22px; background: var(--paper);
+  display: flex; flex-direction: column; gap: 6px;
 }
-.vital:first-child { border-left: 0; padding-left: 0; }
 .vital-num {
   font: 600 26px/1 var(--mono); letter-spacing: -.01em; color: var(--ink);
   font-variant-numeric: tabular-nums;
@@ -1319,7 +1323,7 @@ main { display: flex; flex-direction: column; gap: 26px; }
   display: flex; align-items: center; gap: 12px; padding: 12px 16px;
   border-bottom: 1px solid var(--line); background: var(--surface-2);
 }
-.path { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.path { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
 .status {
   font: 700 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em;
   padding: 4px 8px; border-radius: 5px;
@@ -1336,7 +1340,7 @@ main { display: flex; flex-direction: column; gap: 26px; }
   display: grid; grid-template-columns: 1fr 340px; gap: 0;
   border-top: 1px solid var(--line);
 }
-.hunk-diff { overflow: auto; }
+.hunk-diff { overflow: auto; min-width: 0; }
 .hunk-header {
   font-family: var(--mono); font-size: 12px; color: var(--accent);
   padding: 7px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line);
@@ -1424,13 +1428,17 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 16px;
-  padding: 9px 18px; background: rgba(255,253,249,.9);
+  /* Align the bar's content with the page measure on wide screens; floor to a
+     small inset on narrow ones. */
+  padding: 9px max(18px, calc((100% - var(--maxw)) / 2 + 40px));
+  background: rgba(255,253,249,.9);
   backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
   font: 12px/1 var(--mono);
 }
-.tb-title { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tb-progress { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
-.tb-top { color: var(--accent); text-decoration: none; }
+/* Title absorbs all shrinkage and truncates; the counter + link never shrink. */
+.tb-title { flex: 0 1 auto; min-width: 0; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-progress { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tb-top { flex: none; color: var(--accent); text-decoration: none; white-space: nowrap; }
 
 /* ── Review-first callout ── */
 .review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
@@ -1447,7 +1455,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 .rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px rgba(47,93,156,.1); }
 .rf-rank { font: 700 13px/1 var(--mono); color: var(--accent); }
-.rf-path { font-size: 12.5px; }
+.rf-path { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
 .rf-reasons { display: flex; flex-wrap: wrap; gap: 4px 8px; width: 100%; }
 .rf-reasons span {
   font: 600 10px/1.5 var(--mono); color: var(--ink-soft);
@@ -1471,7 +1479,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .fi-link:hover { background: var(--surface-2); }
 .fi-link.active { background: var(--accent-soft); }
 .fi-rank { font: 700 12px/1 var(--mono); color: var(--accent); width: 2.4em; flex: none; }
-.fi-path { font-size: 12.5px; flex: 1 1 auto; background: none; padding: 0; }
+.fi-path { font-size: 12.5px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; background: none; padding: 0; }
 .fi-sig { display: flex; gap: 4px 10px; flex: none; font: 11px/1.4 var(--mono); color: var(--muted); }
 .fi-sig .fi-hot { color: var(--del); font-weight: 700; }
 .fi-sig .fi-gap { color: var(--warn); font-weight: 700; }
@@ -1509,6 +1517,18 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 @media (max-width: 820px) {
   .review-first, .file-index { padding: 22px; }
   .fi-sig { width: 100%; }
+}
+
+/* ── Phones ── */
+@media (max-width: 560px) {
+  .vital-num { font-size: 22px; }
+  /* The 3-column risk ledger can't stay legible much below ~460px — let it
+     scroll inside its card rather than crushing every column to a sliver. */
+  .risks { overflow-x: auto; }
+  .risk-table { min-width: 440px; }
+  /* Give the lightbox the whole small screen. */
+  #lightbox { padding: 12px; }
+  .lightbox-close { top: 8px; right: 10px; }
 }
 `;
 

@@ -18,11 +18,12 @@ The final demo movie is two segments concatenated:
 ### With a real TTY (intended path)
 
 ```sh
-# 1. Render the review page (from demo/widget-api/)
+# 1. Pre-run the CLI so review.html and .review/intent.json exist for the browser segment
+#    (run from demo/widget-api/)
 npx @christianmorup/review-intent --no-open --out review.html
 
-# 2. Record the terminal segment via VHS
-vhs cli.tape            # writes demo/out/raw-cli/*.webm (or .mp4 per tape)
+# 2. Record the terminal segment via VHS (real TTY required)
+vhs cli.tape            # writes demo/out/cli.mp4
 
 # 3. Record the browser segment via Playwright
 node browser.mjs        # writes demo/out/raw/*.webm

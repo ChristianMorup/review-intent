@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "browser": "node browser.mjs"
+    "browser": "node browser.mjs",
+    "terminal": "node terminal.mjs"
   },
   "devDependencies": {
     "playwright": "^1.59.0"

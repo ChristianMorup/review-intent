@@ -1,6 +1,6 @@
 {
   "name": "@christianmorup/review-intent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Render the diff between the current branch and main as an intent-annotated HTML review page with mermaid class & sequence diagrams.",
   "type": "module",
   "license": "MIT",

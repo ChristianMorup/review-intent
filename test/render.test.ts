@@ -112,6 +112,12 @@ describe("renderHtml", () => {
     expect(html).toContain("orphan note");
   });
 
+  it("emits the FOUC-restore and switcher scripts", () => {
+    expect(html).toContain("review-intent:theme");            // localStorage key
+    expect(html).toContain("dataset.theme");                  // applies theme on <html>
+    expect(html).toContain('querySelectorAll(".theme-opt")'); // switcher wiring
+  });
+
   it("lists files not present in the diff", () => {
     expect(html).toContain("Intent for files not in this diff");
     expect(html).toContain("src/z.ts");

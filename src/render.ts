@@ -25,6 +25,7 @@ export function renderHtml(model: ReviewModel): string {
 <style>${CSS}</style>
 </head>
 <body>
+${themeScript()}
 ${renderTopbar(model)}
 <header class="page-head" id="top">
   <div class="eyebrow">Intent review <span class="eyebrow-diff">${esc(model.base)}…HEAD</span></div>
@@ -153,6 +154,59 @@ function pinScript(model: ReviewModel): string {
     if (wide.addEventListener) wide.addEventListener("change", apply);
     else if (wide.addListener) wide.addListener(apply);
     apply();
+  })();
+</script>`;
+}
+
+/** Restore the saved theme before paint (no flash) and wire the cogwheel menu.
+ *  Static string — pure. Same localStorage + <script> pattern as pinScript. */
+function themeScript(): string {
+  return `<script>
+  (function () {
+    var KEY = "review-intent:theme";
+    var root = document.documentElement;
+    function applyId(id) {
+      if (!id || id === "paper") delete root.dataset.theme;
+      else root.dataset.theme = id;
+    }
+    var saved;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyId(saved);
+    document.addEventListener("DOMContentLoaded", function () {
+      var gear = document.querySelector(".tb-gear");
+      var menu = document.querySelector(".theme-menu");
+      if (!gear || !menu) return;
+      var current = saved || "paper";
+      function mark() {
+        menu.querySelectorAll(".theme-opt").forEach(function (o) {
+          o.setAttribute("aria-checked", o.getAttribute("data-theme-id") === current ? "true" : "false");
+        });
+      }
+      function open(v) {
+        menu.hidden = !v;
+        gear.setAttribute("aria-expanded", v ? "true" : "false");
+      }
+      mark();
+      gear.addEventListener("click", function (e) {
+        e.stopPropagation();
+        open(menu.hidden);
+      });
+      menu.querySelectorAll(".theme-opt").forEach(function (o) {
+        o.addEventListener("click", function () {
+          current = o.getAttribute("data-theme-id");
+          applyId(current);
+          try { localStorage.setItem(KEY, current); } catch (e) {}
+          mark();
+          open(false);
+        });
+      });
+      document.addEventListener("click", function (e) {
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== gear) open(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") open(false);
+      });
+    });
   })();
 </script>`;
 }

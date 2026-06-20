@@ -106,7 +106,7 @@ function pinScript(model: ReviewModel): string {
     // Declaration order — the rail stacks pinned blocks in this order regardless
     // of the order the reader pinned them, so the rail stays predictable.
     var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
-    var wide = window.matchMedia("(min-width: 1400px)");
+    var wide = window.matchMedia("(min-width: 1920px)");
     var nodes = {}, anchors = {};
     document.querySelectorAll(".movable").forEach(function (el) {
       var k = el.getAttribute("data-movable");
@@ -1667,7 +1667,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 /* The pin affordance only exists where there's a rail to pin to (wide screens). */
 .pin-btn { display: none; }
 
-@media (min-width: 1400px) {
+@media (min-width: 1920px) {
   .pin-btn {
     display: inline-flex; align-items: center; justify-content: center;
     position: absolute; top: 12px; right: 14px; z-index: 3;
@@ -1680,10 +1680,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 
   /* The two-pane shell engages only once something is pinned; with an empty
      rail the page stays the calm centred column it is below this width. */
-  body.has-pins .page-head { max-width: 1560px; }
-  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1560px) / 2 + 40px)); }
+  body.has-pins .page-head { max-width: 1840px; }
+  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1840px) / 2 + 40px)); }
   body.has-pins .layout {
-    max-width: 1560px; margin: 0 auto; padding: 0 40px;
+    max-width: 1840px; margin: 0 auto; padding: 0 40px;
     display: grid; grid-template-columns: 320px minmax(0, 1fr);
     gap: 36px; align-items: start;
   }

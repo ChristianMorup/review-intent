@@ -447,8 +447,8 @@ const C_ACCENT = "var(--viz-accent)";
 const C_LINE = "var(--viz-line)";
 
 const CAT_COLOR: Record<FileCategory, string> = {
-  test: "var(--viz-add-ink)",
-  code: "var(--viz-accent)",
+  test: C_ADD_INK,
+  code: C_ACCENT,
   noise: "var(--viz-noise)",
   other: "var(--viz-other)",
 };
@@ -565,7 +565,7 @@ function renderTreemap(stats: FileStat[]): string {
 
   const cells = rects
     .map((r) => {
-      const stroke = r.hasIntent ? "var(--viz-node)" : C_DEL_INK;
+      const stroke = r.hasIntent ? "var(--viz-cell-stroke)" : C_DEL_INK;
       const sw = r.hasIntent ? 1 : 2;
       const label =
         r.w > 54 && r.h > 18
@@ -1238,6 +1238,7 @@ const CSS = `
   --viz-del: #dd574d; --viz-del-ink: #c0362c;
   --viz-warn: #c79100; --viz-accent: #2f5d9c; --viz-line: #e3ded3;
   --viz-node: #ffffff; --viz-node-stroke: #b8b1a4; --viz-accent-stroke: #21456f;
+  --viz-cell-stroke: #ffffff;
   --viz-noise: #9b958a; --viz-other: #7e776c;
   --viz-cell-label: #23211d; --viz-zone: rgba(189, 58, 46, 0.09);
   --kind-e2e: #7a4fa0;

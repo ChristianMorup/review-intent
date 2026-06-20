@@ -18,6 +18,9 @@ jobs:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
           cache: npm
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; the version bundled
+      # with Node may be older, so upgrade explicitly before publishing.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
       - run: npm test

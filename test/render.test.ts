@@ -449,3 +449,33 @@ describe("renderHtml with duplicate file paths", () => {
     expect(html).toContain("beta why");
   });
 });
+
+describe("renderHtml pin-to-rail layout", () => {
+  const html = renderHtml(model);
+
+  it("wraps the content in a layout shell with a rail and content column", () => {
+    expect(html).toContain('class="layout"');
+    expect(html).toContain('<aside class="rail" id="rail"');
+    expect(html).toContain('class="content"');
+  });
+
+  it("wraps each movable block with a pin control and a stable key", () => {
+    expect(html).toContain('class="movable" data-movable="vitals"');
+    expect(html).toContain('class="movable" data-movable="file-index"');
+    expect(html).toContain('class="movable" data-movable="blast"');
+    expect(html).toContain('class="pin-btn"');
+  });
+
+  it("does not wrap an empty (omitted) block — no orphan pin button", () => {
+    // No tests described → the Tests block renders empty and must not become a
+    // bare movable wrapper with a dangling pin button.
+    const noTests = renderHtml({ ...model, tests: [] });
+    expect(noTests).not.toContain('data-movable="tests"');
+  });
+
+  it("ships the pin relocation/persistence script", () => {
+    expect(html).toContain("matchMedia");          // wide-screen gate
+    expect(html).toContain("has-pins");             // shell toggle
+    expect(html).toContain("review-intent:pinned"); // per-change persistence key
+  });
+});

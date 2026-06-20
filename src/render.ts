@@ -35,19 +35,22 @@ ${renderTopbar(model)}
   </details>
 </header>
 
-${renderVitals(model)}
+<div class="layout">
+<aside class="rail" id="rail" aria-label="Pinned blocks"></aside>
+<div class="content">
+${movable("vitals", renderVitals(model))}
 
-${renderReviewFirst(ranked)}
+${movable("review-first", renderReviewFirst(ranked))}
 
-${renderFileIndex(ranked)}
+${movable("file-index", renderFileIndex(ranked))}
 
-${renderBlastRadius(model)}
+${movable("blast", renderBlastRadius(model))}
 
-${renderVisuals(model)}
+${movable("visuals", renderVisuals(model))}
 
-${renderTests(model.tests)}
+${movable("tests", renderTests(model.tests))}
 
-${renderDiagrams(model)}
+${movable("diagrams", renderDiagrams(model))}
 
 <main>
   ${
@@ -58,14 +61,95 @@ ${renderDiagrams(model)}
 </main>
 
 ${renderFilesWithoutChanges(model)}
+</div>
+</div>
 
 ${LIGHTBOX}
 
 ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
 ${viewedScript(model)}
+${pinScript(model)}
 </body>
 </html>`;
+}
+
+/** Wrap a movable top-level block with a pin control so the reader can move it
+ *  into the sticky rail on wide screens. Empty sections (e.g. an unwritten
+ *  Tests block) stay empty — no stray wrapper, no orphan pin button. */
+function movable(key: string, html: string): string {
+  if (!html) return "";
+  return `<div class="movable" data-movable="${key}">${pinButton()}${html}</div>`;
+}
+
+function pinButton(): string {
+  return `<button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button>`;
+}
+
+/** Static, dependency-free enhancement: move pinned blocks into the sticky rail
+ *  on wide screens and remember the choice (per-change, like the viewed state).
+ *  Default is the file index alone — the "bare minimum" spine. Below the wide
+ *  breakpoint every block returns to its original place, so narrow layouts are
+ *  untouched. Each block keeps a comment anchor marking its home slot so it can
+ *  always be restored in the original order. */
+function pinScript(model: ReviewModel): string {
+  const KEY = `review-intent:pinned:${model.title}@${model.base}`;
+  return `<script>
+  (function () {
+    var rail = document.getElementById("rail");
+    if (!rail) return;
+    var KEY = ${JSON.stringify(KEY).replace(/<\//g, "<\\/")};
+    // Declaration order — the rail stacks pinned blocks in this order regardless
+    // of the order the reader pinned them, so the rail stays predictable.
+    var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
+    var wide = window.matchMedia("(min-width: 1400px)");
+    var nodes = {}, anchors = {};
+    document.querySelectorAll(".movable").forEach(function (el) {
+      var k = el.getAttribute("data-movable");
+      nodes[k] = el;
+      var a = document.createComment("m:" + k);
+      el.parentNode.insertBefore(a, el);
+      anchors[k] = a;
+    });
+    var pinned;
+    try { pinned = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (!Array.isArray(pinned)) pinned = ["file-index"];
+    pinned = pinned.filter(function (k) { return nodes[k]; });
+    function apply() {
+      var isWide = wide.matches;
+      ORDER.forEach(function (k) {
+        var el = nodes[k];
+        if (!el) return;
+        var on = pinned.indexOf(k) !== -1;
+        var btn = el.querySelector(".pin-btn");
+        if (btn) {
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+          btn.title = on ? "Unpin from sidebar" : "Pin to sidebar";
+          btn.setAttribute("aria-label", btn.title);
+        }
+        if (isWide && on) rail.appendChild(el);
+        else anchors[k].parentNode.insertBefore(el, anchors[k]);
+      });
+      document.body.classList.toggle("has-pins", isWide && pinned.length > 0);
+    }
+    document.querySelectorAll(".pin-btn").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var el = btn.closest(".movable");
+        if (!el) return;
+        var k = el.getAttribute("data-movable");
+        var i = pinned.indexOf(k);
+        if (i === -1) pinned.push(k); else pinned.splice(i, 1);
+        try { localStorage.setItem(KEY, JSON.stringify(pinned)); } catch (e) {}
+        apply();
+      });
+    });
+    if (wide.addEventListener) wide.addEventListener("change", apply);
+    else if (wide.addListener) wide.addListener(apply);
+    apply();
+  })();
+</script>`;
 }
 
 /** Slim sticky bar: persistent wayfinding across the long scroll. The progress
@@ -1529,6 +1613,55 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   /* Give the lightbox the whole small screen. */
   #lightbox { padding: 12px; }
   .lightbox-close { top: 8px; right: 10px; }
+}
+
+/* ── Pin-to-rail: movable blocks + a sticky sidebar on wide screens ── */
+.movable { position: relative; }
+.rail:empty { display: none; }
+/* The pin affordance only exists where there's a rail to pin to (wide screens). */
+.pin-btn { display: none; }
+
+@media (min-width: 1400px) {
+  .pin-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: absolute; top: 12px; right: 14px; z-index: 3;
+    font: 12px/1 var(--mono); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px;
+    padding: 4px 6px; opacity: 0; transition: opacity .15s, border-color .15s;
+  }
+  .movable:hover > .pin-btn, .pin-btn:focus-visible { opacity: 1; }
+  .pin-btn[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+
+  /* The two-pane shell engages only once something is pinned; with an empty
+     rail the page stays the calm centred column it is below this width. */
+  body.has-pins .page-head { max-width: 1560px; }
+  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1560px) / 2 + 40px)); }
+  body.has-pins .layout {
+    max-width: 1560px; margin: 0 auto; padding: 0 40px;
+    display: grid; grid-template-columns: 320px minmax(0, 1fr);
+    gap: 36px; align-items: start;
+  }
+  body.has-pins .rail {
+    position: sticky; top: 56px; align-self: start;
+    max-height: calc(100vh - 72px); overflow: auto;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  body.has-pins .content { min-width: 0; }
+  /* Inside the shell, blocks fill their column instead of self-centring. */
+  body.has-pins .content > .movable > section,
+  body.has-pins .content > .movable > nav,
+  body.has-pins .content > main,
+  body.has-pins .content > .orphans,
+  body.has-pins .rail > .movable > section,
+  body.has-pins .rail > .movable > nav { max-width: none; margin: 0; }
+  /* Rail blocks: trim the band padding, drop the band rule, fit narrow charts
+     and let a wide table scroll rather than crush. */
+  body.has-pins .rail > .movable > section,
+  body.has-pins .rail > .movable > nav { padding: 18px 16px; border-top: 0; }
+  body.has-pins .rail .band-body { padding-top: 16px; }
+  body.has-pins .rail .blast-grid { grid-template-columns: 1fr; }
+  body.has-pins .rail .risks { overflow-x: auto; }
+  body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
 }
 `;
 

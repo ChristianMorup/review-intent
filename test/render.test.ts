@@ -386,3 +386,13 @@ describe("renderHtml with intent gaps (--allow-gaps draft)", () => {
     expect(html).toContain('class="file-intent missing"');
   });
 });
+
+describe("renderHtml storage key escaping", () => {
+  it("escapes a </script> sequence in the title so the script tag is not broken", () => {
+    const html = renderHtml({ ...model, title: "fix </script> now" });
+    // the raw, unescaped sequence from the title must NOT appear (it would close the tag)
+    expect(html).not.toContain("viewed:fix </script> now");
+    // the escaped form is what gets emitted into the JS string literal
+    expect(html).toContain("fix <\\/script> now");
+  });
+});

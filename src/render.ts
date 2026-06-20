@@ -1531,7 +1531,7 @@ function viewedScript(model: ReviewModel): string {
   const KEY = `review-intent:viewed:${model.title}@${model.base}`;
   return `<script>
   (function () {
-    var KEY = ${JSON.stringify(KEY)};
+    var KEY = ${JSON.stringify(KEY).replace(/<\//g, "<\\/")};
     var store;
     try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
     var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
@@ -1550,7 +1550,7 @@ function viewedScript(model: ReviewModel): string {
       if (toggle) toggle.addEventListener("click", function (e) { e.stopPropagation(); });
       cb.addEventListener("change", function () {
         if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; }
-        else { f.classList.remove("viewed"); delete store[f.id]; }
+        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; }
         try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
         update();
       });

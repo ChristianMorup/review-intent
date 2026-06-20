@@ -340,6 +340,13 @@ describe("renderHtml", () => {
   it("injects the tour order from the review ranking", () => {
     expect(html).toContain('[{"slug":"file-0","path":"src/a.ts"}]');
   });
+
+  it("emits the theme switcher cogwheel and theme blocks", () => {
+    expect(html).toContain('class="tb-gear"');           // cogwheel button
+    expect(html).toContain('class="theme-menu"');        // popover menu
+    expect(html).toContain('[data-theme="nord"]');       // a theme CSS block
+    expect(html).toContain('data-theme-id="hacker"');    // a menu option
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

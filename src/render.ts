@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import { isTestPath, isCodePath, isNoisePath } from "./scorecard.js";
 import { reviewOrder, type RankedFile } from "./review-order.js";
+import { THEMES, themeCss } from "./themes.js";
 
 /** Pure: produce a self-contained HTML document from the review model. */
 export function renderHtml(model: ReviewModel): string {
@@ -160,11 +161,32 @@ function pinScript(model: ReviewModel): string {
  *  counter is updated client-side as files are marked "seen". */
 function renderTopbar(model: ReviewModel): string {
   const n = model.files.length;
+  const groups: string[] = [];
+  const seen = new Set<string>();
+  for (const t of THEMES) if (!seen.has(t.group)) { seen.add(t.group); groups.push(t.group); }
+  const menu = groups
+    .map((g) => {
+      const opts = THEMES.filter((t) => t.group === g)
+        .map(
+          (t) =>
+            `<button type="button" class="theme-opt" role="menuitemradio" data-theme-id="${t.id}">${esc(t.label)}</button>`,
+        )
+        .join("");
+      return `<div class="theme-grp"><div class="theme-grp-h">${esc(g)}</div>${opts}</div>`;
+    })
+    .join("");
   return `<div class="topbar">
   <span class="tb-title">${esc(model.title)}</span>
   <span class="tb-progress" data-total="${n}">0 / ${n} reviewed</span>
   ${n > 0 ? `<button class="tb-tour" type="button">▶ Guided review</button>` : ""}
   <a class="tb-top" href="#top">↑ Top</a>
+  <div class="tb-theme">
+    <button class="tb-gear" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Change theme" title="Change theme">⚙</button>
+    <div class="theme-menu" role="menu" hidden>
+      <button type="button" class="theme-opt" role="menuitemradio" data-theme-id="paper">Paper (default)</button>
+      ${menu}
+    </div>
+  </div>
 </div>`;
 }
 
@@ -1587,6 +1609,31 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .tb-title { flex: 0 1 auto; min-width: 0; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-progress { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tb-top { flex: none; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.tb-theme { position: relative; }
+.tb-gear {
+  background: none; border: 0; cursor: pointer; font-size: 15px;
+  color: var(--muted); padding: 4px 6px; line-height: 1; border-radius: 6px;
+}
+.tb-gear:hover { color: var(--ink); background: var(--surface-2); }
+.theme-menu {
+  position: absolute; right: 0; top: 130%; z-index: 50;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; padding: 8px; min-width: 180px;
+  box-shadow: 0 10px 30px rgba(33,31,27,.18);
+  display: grid; gap: 8px;
+}
+.theme-menu[hidden] { display: none; }
+.theme-grp-h {
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 2px 4px 4px;
+}
+.theme-opt {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  cursor: pointer; padding: 5px 8px; border-radius: 6px; color: var(--ink-soft);
+  font: 13px/1.2 var(--sans);
+}
+.theme-opt:hover { background: var(--surface-2); color: var(--ink); }
+.theme-opt[aria-checked="true"] { color: var(--accent); font-weight: 600; }
 
 /* ── Review-first callout ── */
 .review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
@@ -1805,6 +1852,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 @media (max-width: 560px) {
   .tour { flex-wrap: wrap; justify-content: center; bottom: 10px; }
 }
+${themeCss()}
 `;
 
 const MERMAID_SCRIPT = `<script type="module">

@@ -64,6 +64,7 @@ ${LIGHTBOX}
 
 ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
+${viewedScript(model)}
 </body>
 </html>`;
 }
@@ -1522,6 +1523,56 @@ const LIGHTBOX = `<div id="lightbox" role="dialog" aria-modal="true" aria-label=
   <button class="lightbox-close" type="button" aria-label="Close">✕</button>
   <div class="lightbox-stage"></div>
 </div>`;
+
+/** Static, dependency-free progressive enhancement: persist "seen" files,
+ *  keep the topbar counter in sync, and highlight the active file in the index.
+ *  Storage key is deterministic (title@base) so it stays per-change. */
+function viewedScript(model: ReviewModel): string {
+  const KEY = `review-intent:viewed:${model.title}@${model.base}`;
+  return `<script>
+  (function () {
+    var KEY = ${JSON.stringify(KEY)};
+    var store;
+    try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
+    var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+    var prog = document.querySelector(".tb-progress");
+    function update() {
+      if (!prog) return;
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      prog.textContent = done + " / " + files.length + " reviewed";
+    }
+    files.forEach(function (f) {
+      var cb = f.querySelector(".viewed-cb");
+      var toggle = f.querySelector(".viewed-toggle");
+      if (!cb) return;
+      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; }
+      // Don't let the control toggle the <details> it lives in.
+      if (toggle) toggle.addEventListener("click", function (e) { e.stopPropagation(); });
+      cb.addEventListener("change", function () {
+        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; }
+        else { f.classList.remove("viewed"); delete store[f.id]; }
+        try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
+        update();
+      });
+    });
+    update();
+
+    var links = {};
+    document.querySelectorAll(".file-index a[href^='#']").forEach(function (a) {
+      links[a.getAttribute("href").slice(1)] = a;
+    });
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          var a = links[en.target.id];
+          if (a) a.classList.toggle("active", en.isIntersecting);
+        });
+      }, { rootMargin: "-45% 0px -45% 0px" });
+      files.forEach(function (f) { io.observe(f); });
+    }
+  })();
+</script>`;
+}
 
 /** Static, dependency-free click-to-zoom. Clones the figure live on click, so a
  *  mermaid <pre> that has since rendered to <svg> is captured as drawn. */

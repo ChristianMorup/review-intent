@@ -301,6 +301,13 @@ describe("renderHtml", () => {
     expect(html).toContain('href="#top"');
     expect(html).toContain('id="top"');
   });
+
+  it("ships the viewed-state / progress / active-nav script", () => {
+    expect(html).toContain("viewed-cb");          // referenced by the script
+    expect(html).toContain("localStorage");        // persistence
+    expect(html).toContain("tb-progress");         // counter target
+    expect(html).toContain("IntersectionObserver"); // index active-highlight
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

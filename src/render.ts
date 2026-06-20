@@ -169,7 +169,7 @@ function renderTopbar(model: ReviewModel): string {
       const opts = THEMES.filter((t) => t.group === g)
         .map(
           (t) =>
-            `<button type="button" class="theme-opt" role="menuitemradio" data-theme-id="${t.id}">${esc(t.label)}</button>`,
+            `<button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="${esc(t.id)}">${esc(t.label)}</button>`,
         )
         .join("");
       return `<div class="theme-grp"><div class="theme-grp-h">${esc(g)}</div>${opts}</div>`;
@@ -182,8 +182,8 @@ function renderTopbar(model: ReviewModel): string {
   <a class="tb-top" href="#top">↑ Top</a>
   <div class="tb-theme">
     <button class="tb-gear" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Change theme" title="Change theme">⚙</button>
-    <div class="theme-menu" role="menu" hidden>
-      <button type="button" class="theme-opt" role="menuitemradio" data-theme-id="paper">Paper (default)</button>
+    <div class="theme-menu" role="menu" aria-label="Theme" hidden>
+      <button type="button" class="theme-opt" role="menuitemradio" aria-checked="true" data-theme-id="paper">Paper (default)</button>
       ${menu}
     </div>
   </div>

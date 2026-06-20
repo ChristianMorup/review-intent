@@ -257,6 +257,19 @@ describe("renderHtml", () => {
     expect(tests).toContain(">unit<");
     expect(tests).toContain(">integration<");
   });
+
+  it("renders each file as a collapsible section with a stable anchor id", () => {
+    expect(html).toContain('<details class="file" id="file-0" open>');
+    expect(html).toContain('<summary class="file-head">');
+  });
+
+  it("shows per-file signal badges and a review rank in the file head", () => {
+    const head = html.slice(html.indexOf('id="file-0"'));
+    expect(head).toContain('class="file-rank"');   // #1, #2, ...
+    expect(head).toContain('class="fbadge fbadge-churn"');
+    expect(head).toContain('class="fbadge fbadge-hot"'); // src/a.ts is a CCN-21 hotspot
+    expect(head).toContain('class="viewed-cb"');         // "seen" checkbox
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

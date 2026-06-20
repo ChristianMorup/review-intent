@@ -10,9 +10,12 @@ import type {
   TestCase,
 } from "./types.js";
 import { isTestPath, isCodePath, isNoisePath } from "./scorecard.js";
+import { reviewOrder, type RankedFile } from "./review-order.js";
 
 /** Pure: produce a self-contained HTML document from the review model. */
 export function renderHtml(model: ReviewModel): string {
+  const ranked = reviewOrder(model);
+  const byPath = new Map(model.files.map((f) => [f.path, f]));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,7 +46,11 @@ ${renderTests(model.tests)}
 ${renderDiagrams(model)}
 
 <main>
-  ${model.files.length === 0 ? `<p class="empty">No file changes in this diff.</p>` : model.files.map(renderFile).join("\n")}
+  ${
+    ranked.length === 0
+      ? `<p class="empty">No file changes in this diff.</p>`
+      : ranked.map((r) => renderFile(byPath.get(r.path)!, r)).join("\n")
+  }
 </main>
 
 ${renderFilesWithoutChanges(model)}
@@ -858,12 +865,33 @@ ${block("Sequence diagram (changed steps highlighted)", sequence)}
 </section>`;
 }
 
-function renderFile(file: AnnotatedFile): string {
-  return `<section class="file">
-  <div class="file-head">
+/** Compact measured signals shown in a file's head — same data the overview
+ *  ranks on, carried down to the diff so context isn't lost on the way. */
+function fileBadges(r: RankedFile): string {
+  const b: string[] = [
+    `<span class="fbadge fbadge-churn" title="lines added / removed">+${r.added} −${r.removed}</span>`,
+  ];
+  if (r.fanIn > 0)
+    b.push(`<span class="fbadge fbadge-reach" title="repo files importing this one (reach)">→ ${r.fanIn}</span>`);
+  if (r.hotspot)
+    b.push(`<span class="fbadge fbadge-hot" title="measured cyclomatic complexity hotspot">CCN ${r.maxCcn}</span>`);
+  if (r.missingIntent)
+    b.push(`<span class="fbadge fbadge-gap" title="some of this file has no written intent">⚠ intent</span>`);
+  return `<span class="fbadges">${b.join("")}</span>`;
+}
+
+function renderFile(file: AnnotatedFile, r: RankedFile): string {
+  // Noise files (lockfiles, generated) start collapsed; real code starts open.
+  const open = r.isNoise ? "" : " open";
+  return `<details class="file${r.isNoise ? " is-noise" : ""}" id="${r.slug}"${open}>
+  <summary class="file-head">
     <span class="status status-${file.status}">${file.status}</span>
     <code class="path">${esc(file.path)}</code>
-  </div>
+    <span class="file-rank" title="review priority">#${r.rank}</span>
+    ${fileBadges(r)}
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
   ${
     file.why
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
@@ -878,7 +906,8 @@ function renderFile(file: AnnotatedFile): string {
   </div>`
       : ""
   }
-</section>`;
+  </div>
+</details>`;
 }
 
 /** Render a what/why pair (the structured per-change intent). */

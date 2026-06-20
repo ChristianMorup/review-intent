@@ -319,6 +319,27 @@ describe("renderHtml", () => {
     expect(html).toContain('data-ckind="file"');
     expect(html).toContain('<textarea class="cinput" data-cid="file-0" data-ref="src/a.ts"');
   });
+
+  it("renders the feedback panel with page comment, output, and copy button", () => {
+    expect(html).toContain('class="review-feedback"');
+    expect(html).toContain('data-cid="__page__"');
+    expect(html).toContain('class="fb-output"');
+    expect(html).toContain('class="fb-copy"');
+  });
+
+  it("embeds the comment script with the per-change storage key", () => {
+    expect(html).toContain("review-intent:comments:My change@main");
+    expect(html).toContain("Review feedback on");
+  });
+
+  it("renders the guided-tour control and start button", () => {
+    expect(html).toContain('id="tour"');
+    expect(html).toContain('class="tb-tour"');
+  });
+
+  it("injects the tour order from the review ranking", () => {
+    expect(html).toContain('[{"slug":"file-0","path":"src/a.ts"}]');
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

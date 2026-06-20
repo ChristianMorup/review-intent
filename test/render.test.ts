@@ -287,6 +287,20 @@ describe("renderHtml", () => {
     expect(head).toContain('class="fbadge fbadge-hot"'); // src/a.ts is a CCN-21 hotspot
     expect(head).toContain('class="viewed-cb"');         // "seen" checkbox
   });
+
+  it("wraps the heavy analytics in collapsible bands (blast open, visuals closed)", () => {
+    expect(html).toContain('<details class="band" open>');
+    expect(html).toContain('<details class="band">');
+    expect(html).toContain('class="visuals"');
+    expect(html).toContain('class="tests"');
+  });
+
+  it("renders a sticky top bar with a reviewed-progress counter and back-to-top", () => {
+    expect(html).toContain('class="topbar"');
+    expect(html).toContain('class="tb-progress"');
+    expect(html).toContain('href="#top"');
+    expect(html).toContain('id="top"');
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

@@ -25,7 +25,8 @@ export function renderHtml(model: ReviewModel): string {
 <style>${CSS}</style>
 </head>
 <body>
-<header class="page-head">
+${renderTopbar(model)}
+<header class="page-head" id="top">
   <div class="eyebrow">Intent review <span class="eyebrow-diff">${esc(model.base)}…HEAD</span></div>
   <h1>${esc(model.title)}</h1>
   <div class="tldr">${md(model.tldr)}</div>
@@ -65,6 +66,17 @@ ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
 </body>
 </html>`;
+}
+
+/** Slim sticky bar: persistent wayfinding across the long scroll. The progress
+ *  counter is updated client-side as files are marked "seen". */
+function renderTopbar(model: ReviewModel): string {
+  const n = model.files.length;
+  return `<div class="topbar">
+  <span class="tb-title">${esc(model.title)}</span>
+  <span class="tb-progress" data-total="${n}">0 / ${n} reviewed</span>
+  <a class="tb-top" href="#top">↑ Top</a>
+</div>`;
 }
 
 /** The overview strip: the handful of measured numbers that define the change's
@@ -121,12 +133,16 @@ function renderVitals(model: ReviewModel): string {
 
 function renderBlastRadius(model: ReviewModel): string {
   return `<section class="blast">
-  <h2>Blast radius</h2>
-  <div class="blast-grid">
-    ${renderScorecard(model)}
-    ${renderRisks(model.risks)}
-  </div>
-  ${renderReach(model.reach)}
+  <details class="band" open>
+    <summary class="band-head"><h2>Blast radius</h2></summary>
+    <div class="band-body">
+      <div class="blast-grid">
+        ${renderScorecard(model)}
+        ${renderRisks(model.risks)}
+      </div>
+      ${renderReach(model.reach)}
+    </div>
+  </details>
 </section>`;
 }
 
@@ -385,10 +401,14 @@ function renderVisuals(model: ReviewModel): string {
   ].filter(Boolean);
   if (blocks.length === 0) return "";
   return `<section class="visuals">
-  <h2>Visual summary <span class="src">measured</span></h2>
-  <div class="viz-grid">
-    ${blocks.join("\n    ")}
-  </div>
+  <details class="band">
+    <summary class="band-head"><h2>Visual summary <span class="src">measured</span></h2></summary>
+    <div class="band-body">
+      <div class="viz-grid">
+        ${blocks.join("\n    ")}
+      </div>
+    </div>
+  </details>
 </section>`;
 }
 
@@ -846,8 +866,12 @@ function renderTests(tests: TestCase[]): string {
 
   const n = tests.length;
   return `<section class="tests">
-  <h2>Tests <span class="src">claimed</span> <span class="muted test-count">${n} case${n === 1 ? "" : "s"} described</span></h2>
-  ${blocks}
+  <details class="band">
+    <summary class="band-head"><h2>Tests <span class="src">claimed</span> <span class="muted test-count">${n} case${n === 1 ? "" : "s"} described</span></h2></summary>
+    <div class="band-body">
+      ${blocks}
+    </div>
+  </details>
 </section>`;
 }
 
@@ -862,10 +886,15 @@ function renderDiagrams(model: ReviewModel): string {
 </section>`
       : "";
   return `<section class="diagrams">
-  <div class="diagram-grid">
+  <details class="band">
+    <summary class="band-head"><h2>Diagrams</h2></summary>
+    <div class="band-body">
+      <div class="diagram-grid">
 ${block("Class diagram", cls)}
 ${block("Sequence diagram (changed steps highlighted)", sequence)}
-  </div>
+      </div>
+    </div>
+  </details>
 </section>`;
 }
 

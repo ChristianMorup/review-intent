@@ -1067,7 +1067,8 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
       : `<div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>`
   }
-  ${file.hunks.map(renderHunk).join("\n")}
+  ${commentBox(r.slug, file.path, "file")}
+  ${file.hunks.map((h, j) => renderHunk(h, r.index, j, file.path)).join("\n")}
   ${
     file.unmatchedIntents.length
       ? `<div class="unmatched">
@@ -1080,6 +1081,21 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
+/** A reviewer comment affordance: a 💬 toggle + a hidden textarea the comment
+ *  script persists. Pure markup; the textarea carries the data the assembled
+ *  prompt is built from. `cid` is the localStorage key, `ref` the human-readable
+ *  location shown in the prompt. */
+function commentBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
+  const hdrAttr = hdr ? ` data-hdr="${esc(hdr)}"` : "";
+  const ph = kind === "hunk"
+    ? "Note to the agent about this hunk…"
+    : "Note to the agent about this file…";
+  return `<div class="cbox" data-ckind="${kind}">
+    <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬</button>
+    <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} placeholder="${ph}"></textarea>
+  </div>`;
+}
+
 /** Render a what/why pair (the structured per-change intent). */
 function whatWhy(what: string | undefined, why: string): string {
   const whatBlock = what
@@ -1088,7 +1104,9 @@ function whatWhy(what: string | undefined, why: string): string {
   return `<div class="ww">${whatBlock}<div class="why"><span class="lbl">Why</span> ${md(why)}</div></div>`;
 }
 
-function renderHunk(hunk: AnnotatedHunk): string {
+function renderHunk(hunk: AnnotatedHunk, fileIndex: number, hunkIndex: number, path: string): string {
+  const cid = `file-${fileIndex}-hunk-${hunkIndex}`;
+  const ref = `${path}:${hunk.newStart}${hunk.newEnd !== hunk.newStart ? `-${hunk.newEnd}` : ""}`;
   return `<div class="hunk-row">
   <div class="hunk-diff">
     <div class="hunk-header">${esc(hunk.header)}</div>
@@ -1100,6 +1118,7 @@ function renderHunk(hunk: AnnotatedHunk): string {
         ? hunk.intents.map((i) => `<div class="note">${whatWhy(i.what, i.why)}</div>`).join("")
         : `<div class="note missing">⚠ No intent for this hunk.</div>`
     }
+    ${commentBox(cid, ref, "hunk", hunk.header)}
   </aside>
 </div>`;
 }

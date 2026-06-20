@@ -308,6 +308,17 @@ describe("renderHtml", () => {
     expect(html).toContain("tb-progress");         // counter target
     expect(html).toContain("IntersectionObserver"); // index active-highlight
   });
+
+  it("emits a hunk comment box with a stable id and precise line ref", () => {
+    expect(html).toContain('data-ckind="hunk"');
+    expect(html).toContain('data-cid="file-0-hunk-0"');
+    expect(html).toContain('data-ref="src/a.ts:1-3"');
+  });
+
+  it("emits a file-level comment box keyed on the file slug", () => {
+    expect(html).toContain('data-ckind="file"');
+    expect(html).toContain('<textarea class="cinput" data-cid="file-0" data-ref="src/a.ts"');
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

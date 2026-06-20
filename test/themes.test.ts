@@ -40,4 +40,25 @@ describe("themes", () => {
     expect(t.tokens["--paper"]).toBe("#000");
     expect(t.tokens["--add-border"]).toBe("#0f0"); // derived aliases core
   });
+
+  it("makeTheme emits exactly TOKEN_KEYS when no font overrides are given", () => {
+    // Guards both directions: a token added to makeTheme but not TOKEN_KEYS
+    // (or vice versa) must fail here, so the two lists can't silently drift.
+    const t = makeTheme("x", "X", "Test", {
+      paper: "#000", surface: "#111", surface2: "#222", ink: "#fff",
+      inkSoft: "#ddd", muted: "#999", line: "#333", line2: "#444",
+      accent: "#0af", accentSoft: "#013", add: "#0f0", addSoft: "#020",
+      del: "#f00", delSoft: "#200", warn: "#fa0", warnSoft: "#210",
+    });
+    expect(new Set(Object.keys(t.tokens))).toEqual(new Set(TOKEN_KEYS));
+  });
+
+  it("themes only define keys in the contract (plus optional --sans/--mono)", () => {
+    const allowed = new Set<string>([...TOKEN_KEYS, "--sans", "--mono"]);
+    for (const t of THEMES) {
+      for (const k of Object.keys(t.tokens)) {
+        expect(allowed.has(k), `${t.id} emits unknown token ${k}`).toBe(true);
+      }
+    }
+  });
 });

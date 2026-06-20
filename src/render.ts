@@ -15,7 +15,6 @@ import { reviewOrder, type RankedFile } from "./review-order.js";
 /** Pure: produce a self-contained HTML document from the review model. */
 export function renderHtml(model: ReviewModel): string {
   const ranked = reviewOrder(model);
-  const byPath = new Map(model.files.map((f) => [f.path, f]));
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,7 +53,7 @@ ${renderDiagrams(model)}
   ${
     ranked.length === 0
       ? `<p class="empty">No file changes in this diff.</p>`
-      : ranked.map((r) => renderFile(byPath.get(r.path)!, r)).join("\n")
+      : ranked.map((r) => renderFile(model.files[r.index], r)).join("\n")
   }
 </main>
 

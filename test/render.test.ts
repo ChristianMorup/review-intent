@@ -396,3 +396,56 @@ describe("renderHtml storage key escaping", () => {
     expect(html).toContain("fix <\\/script> now");
   });
 });
+
+describe("renderHtml with duplicate file paths", () => {
+  it("renders each file by index, so same-path entries do not collapse", () => {
+    const dup = {
+      ...model,
+      reach: { changed: [], edges: [] },
+      complexity: { ...model.complexity, available: false, hotspots: [], maxCcn: 0, worst: null },
+      files: [
+        {
+          path: "src/dup.ts",
+          status: "modified" as const,
+          what: "first what",
+          why: "first why",
+          unmatchedIntents: [],
+          hunks: [
+            {
+              header: "@@ -1 +1 @@",
+              newStart: 1,
+              newEnd: 1,
+              intents: [{ anchor: 1, what: "alpha what", why: "alpha why" }],
+              lines: [{ type: "add" as const, content: "ALPHA_LINE", newNumber: 1 }],
+            },
+          ],
+        },
+        {
+          path: "src/dup.ts",
+          status: "modified" as const,
+          what: "second what",
+          why: "second why",
+          unmatchedIntents: [],
+          hunks: [
+            {
+              header: "@@ -2 +2 @@",
+              newStart: 2,
+              newEnd: 2,
+              intents: [{ anchor: 2, what: "beta what", why: "beta why" }],
+              lines: [{ type: "add" as const, content: "BETA_LINE", newNumber: 2 }],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderHtml(dup);
+    // Both files get their own anchor section…
+    expect(html).toContain('id="file-0"');
+    expect(html).toContain('id="file-1"');
+    // …and their distinct content is preserved (neither is collapsed onto the other).
+    expect(html).toContain("ALPHA_LINE");
+    expect(html).toContain("BETA_LINE");
+    expect(html).toContain("alpha why");
+    expect(html).toContain("beta why");
+  });
+});

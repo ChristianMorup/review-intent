@@ -4,6 +4,9 @@ import { isNoisePath } from "./scorecard.js";
 /** Per-file signals derived from the measured model — no I/O, deterministic. */
 export interface FileSignals {
   path: string;
+  /** Position in `model.files` (original diff order). The content lookup keys
+   *  on this, not on `path`, so duplicate paths can never collapse together. */
+  index: number;
   /** Stable, unique anchor id for the file's detail section. */
   slug: string;
   status: AnnotatedFile["status"];
@@ -74,6 +77,7 @@ export function collectSignals(model: ReviewModel): FileSignals[] {
     const missingIntent = !f.why || f.hunks.some((h) => h.intents.length === 0);
     return {
       path: f.path,
+      index: i,
       slug: fileSlug(i),
       status: f.status,
       added,

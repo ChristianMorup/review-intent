@@ -71,7 +71,7 @@ adding imports.
    `--allow-gaps` is set.
 9. `render.ts` — **pure** `ReviewModel -> HTML` string. Self-contained page.
    Includes the "visual summary": five charts (diff-mass bars, squarified
-   treemap, coverage rings, reach ripple, honesty quadrant) hand-rolled as inline
+   treemap, coverage rings, reach ripple, per-file change map) hand-rolled as inline
    SVG strings — no charting dependency, kept deterministic (no `Date`/random) so
    they stay unit-testable by asserting on the emitted markup. `npm run sample`
    regenerates `sample-output.html` via `scripts/gen-sample.mjs` for eyeballing.

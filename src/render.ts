@@ -299,13 +299,15 @@ function rippleNode(
   const fill = isChanged ? C_ACCENT : "#ffffff";
   const stroke = isChanged ? "#21456f" : "#b8b1a4";
   const ly = isChanged ? p.y - 13 : p.y + 16;
+  const tip = isChanged ? `${path} — changed file` : `${path} — imports a changed file`;
   return `<g class="ripple-node">
+  <title>${esc(tip)}</title>
   <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" />
   <text x="${p.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="ripple-label">${esc(shortPath(path, 22))}</text>
 </g>`;
 }
 
-// ── Visual summary: four pure inline-SVG charts driven by the measured model ──
+// ── Visual summary: five pure inline-SVG charts driven by the measured model ──
 
 type FileCategory = "test" | "code" | "noise" | "other";
 
@@ -368,7 +370,7 @@ function renderVisuals(model: ReviewModel): string {
     renderTreemap(stats),
     renderComplexityHotspots(model.complexity),
     renderCoverageRings(model.intentCoverage),
-    renderHonestyQuadrant(model),
+    renderChangeScatter(model),
   ].filter(Boolean);
   if (blocks.length === 0) return "";
   return `<section class="visuals">
@@ -407,19 +409,18 @@ function renderDiffMass(stats: FileStat[]): string {
       const mark = f.hasIntent
         ? `<circle cx="9" cy="${mid}" r="3" fill="${C_ADD}" />`
         : `<circle cx="9" cy="${mid}" r="3" fill="none" stroke="${C_DEL}" stroke-width="1.5" />`;
-      return `${mark}
+      const tip = `${f.path} — +${f.added} −${f.removed} (${f.category})${f.hasIntent ? "" : " · no intent written"}`;
+      return `<g><title>${esc(tip)}</title>${mark}
     <text x="18" y="${mid + 3}" class="viz-label" fill="${CAT_COLOR[f.category]}">${esc(shortPath(f.path, 26))}</text>
     <rect x="${(xc - remW).toFixed(1)}" y="${y + 4}" width="${remW.toFixed(1)}" height="${rowH - 8}" fill="${C_DEL}" fill-opacity="0.9" />
     <rect x="${xc.toFixed(1)}" y="${y + 4}" width="${addW.toFixed(1)}" height="${rowH - 8}" fill="${C_ADD}" fill-opacity="0.9" />
-    <text x="${plotR + 6}" y="${mid + 3}" class="viz-num">+${f.added} −${f.removed}</text>`;
+    <text x="${plotR + 6}" y="${mid + 3}" class="viz-num">+${f.added} −${f.removed}</text></g>`;
     })
     .join("\n    ");
 
   const axis = `<line x1="${xc}" y1="${pad}" x2="${xc}" y2="${H - pad}" class="viz-axis" />`;
   const more =
-    hidden > 0
-      ? `<p class="viz-cap">+${hidden} more file(s) not charted (showing the ${cap} largest).</p>`
-      : "";
+    hidden > 0 ? ` ${hidden} more file${plural(hidden)} not charted (showing the ${cap} largest).` : "";
 
   return `<div class="card viz viz-span zoomable">
   <h3>Diff mass <span class="src">± lines per file</span></h3>
@@ -427,7 +428,7 @@ function renderDiffMass(stats: FileStat[]): string {
     ${axis}
     ${body}
   </svg>
-  ${more}
+  <p class="viz-cap">One row per changed file, longest diff first: bar length = lines added (green, right) vs removed (red, left). The dot is filled ● when intent was written for the file, hollow ○ when it wasn't. Hover a row for its path and counts.${more}</p>
 </div>`;
 }
 
@@ -450,7 +451,8 @@ function renderTreemap(stats: FileStat[]): string {
         r.w > 54 && r.h > 18
           ? `<text x="${(r.x + 5).toFixed(1)}" y="${(r.y + 15).toFixed(1)}" class="viz-cell-label">${esc(shortPath(basename(r.path), Math.max(3, Math.floor(r.w / 7))))}</text>`
           : "";
-      return `<g><rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="${dirColor(r.path)}" fill-opacity="0.82" stroke="${stroke}" stroke-width="${sw}" />${label}</g>`;
+      const tip = `${r.path} — ${r.churn} line${plural(r.churn)} changed${r.hasIntent ? "" : " · no intent written"}`;
+      return `<g><title>${esc(tip)}</title><rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="${dirColor(r.path)}" fill-opacity="0.82" stroke="${stroke}" stroke-width="${sw}" />${label}</g>`;
     })
     .join("\n    ");
 
@@ -459,7 +461,7 @@ function renderTreemap(stats: FileStat[]): string {
   <svg class="viz-treemap" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
     ${cells}
   </svg>
-  <p class="viz-cap">Rectangle area ∝ ± lines · colour = top-level directory · red outline = no intent written.</p>
+  <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
 </div>`;
 }
 
@@ -536,20 +538,23 @@ function renderCoverageRings(ic: IntentCoverage): string {
   return `<div class="card viz zoomable">
   <h3>Intent coverage <span class="src">measured</span></h3>
   <div class="viz-rings">
-    ${coverageRing("files", ic.filesCovered, ic.filesTotal)}
-    ${coverageRing("hunks", ic.hunksCovered, ic.hunksTotal)}
+    ${coverageRing("files", "file", ic.filesCovered, ic.filesTotal)}
+    ${coverageRing("hunks", "hunk", ic.hunksCovered, ic.hunksTotal)}
   </div>
+  <p class="viz-cap">Share of changed files (each needs a what + why) and diff hunks (each needs an anchored note) that carry agent-written intent. The completeness gate normally forces both to 100% — anything lower means the page was rendered with <code>--allow-gaps</code> and some of the change is unexplained.</p>
 </div>`;
 }
 
-function coverageRing(label: string, num: number, den: number): string {
+function coverageRing(label: string, unit: string, num: number, den: number): string {
   const f = den ? num / den : 0;
   const pct = Math.round(f * 100);
   const r = 42;
   const c = 2 * Math.PI * r;
   const dash = (f * c).toFixed(1);
   const color = f >= 0.8 ? C_ADD : f >= 0.5 ? C_WARN : C_DEL;
+  const tip = `${num} of ${den} ${unit}${plural(den)} carry intent (${pct}%)`;
   return `<svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
+  <title>${esc(tip)}</title>
   <circle cx="60" cy="60" r="${r}" fill="none" stroke="${C_LINE}" stroke-width="12" />
   <circle cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${dash} ${c.toFixed(1)}" transform="rotate(-90 60 60)" />
   <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">${pct}%</text>
@@ -580,9 +585,10 @@ function renderComplexityHotspots(cx: ComplexityModel): string {
       const w = (r.ccn / maxC) * barMax;
       const color = r.ccn >= cx.threshold * 2 ? C_DEL : C_WARN;
       const label = `${r.name} · ${basename(r.file)}:${r.line}`;
-      return `<text x="6" y="${mid + 3}" class="viz-label">${esc(shortPath(label, 44))}</text>
+      const tip = `${r.name} — CCN ${r.ccn} (threshold ${cx.threshold}) at ${r.file}:${r.line}`;
+      return `<g><title>${esc(tip)}</title><text x="6" y="${mid + 3}" class="viz-label">${esc(shortPath(label, 44))}</text>
     <rect x="${barL}" y="${y + 4}" width="${w.toFixed(1)}" height="${rowH - 8}" fill="${color}" fill-opacity="0.85" />
-    <text x="${(barL + w + 6).toFixed(1)}" y="${mid + 3}" class="viz-num">${r.ccn}</text>`;
+    <text x="${(barL + w + 6).toFixed(1)}" y="${mid + 3}" class="viz-num">${r.ccn}</text></g>`;
     })
     .join("\n    ");
 
@@ -591,49 +597,170 @@ function renderComplexityHotspots(cx: ComplexityModel): string {
   <svg class="viz-complexity" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
     ${body}
   </svg>
-  <p class="viz-cap">Cyclomatic complexity of changed functions at or above the threshold (${cx.threshold}); bars at ≥ 2× threshold are red.</p>
+  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of ${cx.threshold}; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
 </div>`;
 }
 
-/** #5 Honesty quadrant — claimed candor vs measured blast radius. */
-function renderHonestyQuadrant(model: ReviewModel): string {
-  if (model.files.length === 0) return "";
-  const sc = model.scorecard;
-  const ic = model.intentCoverage;
-  const sat = (v: number, k: number) => (v <= 0 ? 0 : 1 - 1 / (1 + v / k));
-  const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+/** #5 Change map — one dot per changed file, placed by measured blast radius
+ *  (downstream reach) against measured size (churn), so the file that most
+ *  deserves a reviewer's attention is the one in the top-right. Everything here
+ *  is measured: there is no honest per-file "candor" signal (risks aren't
+ *  file-scoped and per-hunk intent is forced complete by the gate). */
+function renderChangeScatter(model: ReviewModel): string {
+  const cx = model.complexity;
+  const norm = (p: string) => p.replace(/\\/g, "/");
 
-  const churn = sc.added + sc.removed;
-  const fanIn = model.reach.edges.length;
-  const blast = clamp01(0.6 * sat(churn, 400) + 0.4 * sat(fanIn, 8));
-  const hunkCov = ic.hunksTotal ? ic.hunksCovered / ic.hunksTotal : 0;
-  const candor = clamp01(0.6 * hunkCov + 0.4 * sat(model.risks.length, 3));
+  // Files carrying a complexity hotspot — measured; empty when lizard didn't run.
+  const hotFiles = cx.available ? cx.hotspots.map((h) => norm(h.file)) : [];
+  const isHot = (path: string): boolean => {
+    const p = norm(path);
+    const base = p.split("/").pop() ?? p;
+    return hotFiles.some(
+      (h) => h === p || h.endsWith("/" + p) || p.endsWith("/" + h) || (h.split("/").pop() ?? h) === base,
+    );
+  };
+  const fanInOf = (path: string): number =>
+    model.reach.edges.reduce((n, e) => (norm(e.to) === norm(path) ? n + 1 : n), 0);
 
-  const S = 360;
-  const m = 44;
-  const plot = S - 2 * m;
-  const px = m + blast * plot;
-  const py = m + (1 - candor) * plot;
-  const mid = m + plot / 2;
+  const pts = model.files
+    .map((f) => {
+      let churn = 0;
+      for (const h of f.hunks)
+        for (const l of h.lines) if (l.type === "add" || l.type === "del") churn++;
+      return { path: f.path, churn, fanIn: fanInOf(f.path), hunks: f.hunks.length, hot: isHot(f.path) };
+    })
+    .filter((p) => p.churn > 0 || p.fanIn > 0);
+  if (pts.length === 0) return "";
 
-  return `<div class="card viz zoomable">
-  <h3>Honesty quadrant <span class="src">claimed vs measured</span></h3>
-  <svg class="viz-quadrant" viewBox="0 0 ${S} ${S}" preserveAspectRatio="xMidYMid meet" role="img">
-    <rect x="${mid}" y="${mid}" width="${plot / 2}" height="${plot / 2}" class="viz-danger" />
-    <line x1="${m}" y1="${mid}" x2="${S - m}" y2="${mid}" class="viz-axis" />
-    <line x1="${mid}" y1="${m}" x2="${mid}" y2="${S - m}" class="viz-axis" />
-    <rect x="${m}" y="${m}" width="${plot}" height="${plot}" fill="none" stroke="${C_LINE}" />
-    <text x="${S - m}" y="${S - m + 20}" text-anchor="end" class="viz-axis-label">blast radius →</text>
-    <text x="${m - 8}" y="${m - 14}" class="viz-axis-label">↑ candor</text>
-    <text x="${mid + 8}" y="${S - m - 10}" class="viz-axis-label viz-danger-label">high blast · low candor</text>
-    <circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="7" class="viz-dot" />
+  const maxChurn = Math.max(...pts.map((p) => p.churn), 1);
+  const maxFan = Math.max(...pts.map((p) => p.fanIn), 1);
+  const maxHunks = Math.max(...pts.map((p) => p.hunks), 1);
+
+  const W = 720;
+  const H = 380;
+  const mL = 54;
+  const mR = 18;
+  const mT = 22;
+  const mB = 46;
+  const plotW = W - mL - mR;
+  const plotH = H - mT - mB;
+  // sqrt on the magnitude axes so one huge file doesn't crush the rest into the
+  // corner; monotonic, so the visual order still reflects the real order.
+  const sq = (v: number, max: number) => (max > 0 ? Math.sqrt(v) / Math.sqrt(max) : 0);
+  const X = (fan: number) => mL + sq(fan, maxFan) * plotW;
+  const Y = (churn: number) => mT + (1 - sq(churn, maxChurn)) * plotH;
+  const R = (hunks: number) => 5 + sq(hunks, maxHunks) * 9;
+  const midX = mL + plotW / 2;
+  const midY = mT + plotH / 2;
+
+  // Files with the same downstream reach land on the same x-column and would
+  // overlap (commonly the many files nothing imports, all at the left axis).
+  // Dodge each column's dots horizontally — deterministic, ordered by churn —
+  // so every file stays individually visible and hoverable. The column's centre
+  // still reads as its reach value; the spread is clamped inside the plot.
+  const minX = mL + 16;
+  const maxX = W - mR - 16;
+  const columns = new Map<number, typeof pts>();
+  for (const p of pts) {
+    const key = Math.round(X(p.fanIn));
+    const arr = columns.get(key);
+    if (arr) arr.push(p);
+    else columns.set(key, [p]);
+  }
+  const dodgeX = new Map<string, number>();
+  for (const [key, group] of columns) {
+    const ordered = [...group].sort((a, b) => a.churn - b.churn || (a.path < b.path ? -1 : 1));
+    const n = ordered.length;
+    // Step the dodge by the widest dot in the column (its diameter + a 4px gap)
+    // so dots never overlap. If a column holds too many same-reach files to fit
+    // the plot width, compress the step to fit rather than spilling off-plot.
+    const maxR = Math.max(...ordered.map((p) => R(p.hunks)));
+    let step = 2 * maxR + 4;
+    const availW = maxX - minX;
+    if (n > 1 && (n - 1) * step > availW) step = availW / (n - 1);
+    const run = (n - 1) * step;
+    let start = key - run / 2;
+    if (start + run > maxX) start = maxX - run;
+    if (start < minX) start = minX;
+    ordered.forEach((p, i) => dodgeX.set(p.path, start + i * step));
+  }
+  const PX = (p: { path: string; fanIn: number }) => dodgeX.get(p.path) ?? X(p.fanIn);
+
+  // Label the files nearest the top-right (highest combined reach + churn) so a
+  // dense change doesn't become a wall of text; the rest stay as bare dots.
+  const weight = (p: (typeof pts)[number]) => sq(p.fanIn, maxFan) + sq(p.churn, maxChurn);
+  const labelled = new Set([...pts].sort((a, b) => weight(b) - weight(a)).slice(0, 6).map((p) => p.path));
+
+  const circles = pts
+    .map((p) => {
+      const cls = p.hot ? "viz-dot viz-dot-hot" : "viz-dot";
+      // Native SVG tooltip — full path + the measured numbers behind the dot.
+      const tip = `${p.path} — ${p.churn} line${plural(p.churn)} changed · ${p.hunks} hunk${plural(p.hunks)} · imported by ${p.fanIn} file${plural(p.fanIn)}${p.hot ? " · complexity hotspot" : ""}`;
+      return `<circle cx="${PX(p).toFixed(1)}" cy="${Y(p.churn).toFixed(1)}" r="${R(p.hunks).toFixed(1)}" class="${cls}"><title>${esc(tip)}</title></circle>`;
+    })
+    .join("\n    ");
+
+  // Place labels for the notable files: flip to the left of dots near the right
+  // edge so text never spills off the viewBox, and nudge each one down past the
+  // previous label on its side so a stacked column stays legible. Deterministic
+  // — no glyph measurement, just fixed line spacing.
+  const GAP = 13;
+  const lastY: Record<"l" | "r", number> = { l: -Infinity, r: -Infinity };
+  const labels = pts
+    .filter((p) => labelled.has(p.path))
+    .map((p) => ({ p, x: PX(p), y: Y(p.churn), r: R(p.hunks) }))
+    .sort((a, b) => a.y - b.y)
+    .map(({ p, x, y, r }) => {
+      const side: "l" | "r" = x > mL + plotW * 0.62 ? "l" : "r";
+      const ly = Math.max(y + 3, lastY[side] + GAP);
+      lastY[side] = ly;
+      const lx = side === "r" ? x + r + 4 : x - r - 4;
+      const anchor = side === "r" ? "" : ` text-anchor="end"`;
+      return `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}"${anchor} class="viz-label">${esc(shortPath(basename(p.path), 22))}</text>`;
+    })
+    .join("\n    ");
+
+  const dots = `${circles}\n    ${labels}`;
+
+  // Glyph key. When lizard didn't run, colour carries no meaning, so say so
+  // rather than implying every dot is hotspot-free.
+  const dotSwatch = (cls: string) =>
+    `<svg class="viz-lg-dot" viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="5" class="${cls}" /></svg>`;
+  const colorKey = cx.available
+    ? `<span class="viz-lg">${dotSwatch("viz-dot")}no hotspot</span>
+    <span class="viz-lg">${dotSwatch("viz-dot viz-dot-hot")}complexity hotspot (CCN ≥ ${cx.threshold})</span>`
+    : `<span class="viz-lg">${dotSwatch("viz-dot")}changed file</span>
+    <span class="viz-lg viz-lg-muted">complexity not measured (lizard unavailable)</span>`;
+
+  return `<div class="card viz viz-span zoomable">
+  <h3>Change map <span class="src">per file · measured</span></h3>
+  <svg class="viz-scatter" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
+    <rect x="${midX}" y="${mT}" width="${plotW / 2}" height="${plotH / 2}" class="viz-danger" />
+    <line x1="${mL}" y1="${midY}" x2="${W - mR}" y2="${midY}" class="viz-axis" />
+    <line x1="${midX}" y1="${mT}" x2="${midX}" y2="${H - mB}" class="viz-axis" />
+    <line x1="${mL}" y1="${mT}" x2="${mL}" y2="${H - mB}" stroke="${C_LINE}" />
+    <line x1="${mL}" y1="${H - mB}" x2="${W - mR}" y2="${H - mB}" stroke="${C_LINE}" />
+    <text x="${W - mR}" y="${H - mB + 24}" text-anchor="end" class="viz-axis-label">downstream reach →</text>
+    <text x="${mL - 8}" y="${mT - 8}" class="viz-axis-label">↑ churn (± lines)</text>
+    <text x="${midX + 8}" y="${mT + 16}" class="viz-axis-label viz-danger-label">high churn · high reach — review first</text>
+    ${dots}
   </svg>
-  <p class="viz-cap">blast = churn (${churn}±) + reach (${fanIn}); candor = hunk intent (${Math.round(hunkCov * 100)}%) + ${model.risks.length} declared risk(s). A dot in the red corner is a confident change that hid its risk.</p>
+  <div class="viz-legend">
+    ${colorKey}
+    <span class="viz-lg"><svg class="viz-lg-dot" viewBox="0 0 36 14" width="34" height="13" aria-hidden="true"><circle cx="5" cy="7" r="3" class="viz-dot" /><circle cx="26" cy="7" r="6" class="viz-dot" /></svg>more hunks → bigger dot</span>
+    <span class="viz-lg"><span class="viz-lg-zone"></span>review-first zone</span>
+  </div>
+  <p class="viz-cap">Each dot is one changed file, placed by how far it reaches — repo files that import it (x) — against how much it changed in lines (y). The further toward the top-right, the more it warrants a close read. Hover a dot for its exact numbers.</p>
 </div>`;
 }
 
 function basename(p: string): string {
   return p.split("/").pop() ?? p;
+}
+
+/** "" for 1, "s" otherwise — for tooltip/caption pluralization. */
+function plural(n: number): string {
+  return n === 1 ? "" : "s";
 }
 
 function dirColor(p: string): string {
@@ -989,7 +1116,7 @@ body {
 }
 .viz.viz-span { grid-column: auto; }
 .viz svg { width: 100%; height: auto; display: block; }
-.viz-diffmass, .viz-treemap, .viz-complexity { max-width: 720px; }
+.viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
 .viz-ripple { max-width: 720px; margin: 0 auto; }
 /* Thumbnail clamp for the overview grid; lifted inside the lightbox. */
 .zoomable svg { max-height: 168px; }
@@ -1012,11 +1139,17 @@ body {
 .viz-ring-svg { max-width: 150px; }
 .viz-ring-pct { fill: var(--ink); font-size: 22px; font-weight: 700; font-family: var(--sans); }
 .viz-ring-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
-.viz-quadrant { max-width: 360px; margin: 0 auto; }
 .viz-danger { fill: rgba(189, 58, 46, 0.09); }
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
+.viz-dot-hot { fill: var(--del); }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
+.viz-lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.viz-lg-muted { color: var(--muted); }
+.viz-lg-dot { flex: none; }
+.zoomable .viz-lg-dot { max-height: none; }
+.viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: rgba(189, 58, 46, 0.09); border: 1px solid #eccac4; }
 .ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
 .ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
 .ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }

@@ -92,10 +92,12 @@ self-contained inline SVG (no charting dependency, deterministic output):
    that carry agent rationale (the completeness contract, visualized).
 4. **Reach ripple** — the reach graph as concentric rings: changed files at the
    centre, importers rippling outward.
-5. **Honesty quadrant** — the signature view: measured *blast radius* (churn +
-   reach) on the x-axis against claimed *candor* (intent coverage + declared
-   risks) on the y-axis. A dot landing in the shaded red corner is a high-impact
-   change that declared little risk — the contradiction made into a picture.
+5. **Change map** — the signature view: one dot per changed file, placed by
+   measured *downstream reach* (how many repo files import it) on the x-axis
+   against measured *churn* (± lines) on the y-axis, sized by hunk count and
+   coloured red when the file carries a complexity hotspot. Files in the shaded
+   top-right corner are the largest and most depended-on — the review-first
+   targets, picked out instead of being averaged into a single PR-wide score.
 
 `npm run sample` builds and writes a representative `sample-output.html` you can
 open to see the whole page.

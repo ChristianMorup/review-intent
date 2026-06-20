@@ -171,12 +171,44 @@ describe("renderHtml", () => {
     expect(html).toContain("additional edge(s) hidden");
   });
 
+  it("gives the reach ripple nodes role-explaining tooltips", () => {
+    const ripple = html.slice(html.indexOf('class="viz-ripple"'));
+    expect(ripple).toContain("<title>src/a.ts — changed file</title>");
+    expect(ripple).toContain("<title>src/caller.ts — imports a changed file</title>");
+  });
+
+  it("describes and tooltips the diff-mass rows", () => {
+    const diffmass = html.slice(html.indexOf('class="viz-diffmass"'));
+    expect(diffmass).toContain("<title>src/a.ts — +1 −1 (code)</title>");
+    const cap = html.slice(html.indexOf('class="viz-diffmass"'));
+    expect(cap).toContain("bar length = lines added");
+  });
+
+  it("describes and tooltips the treemap cells", () => {
+    const treemap = html.slice(html.indexOf('class="viz-treemap"'));
+    expect(treemap).toContain("<title>src/a.ts — 2 lines changed</title>");
+    expect(treemap).toContain("area ∝ lines changed");
+  });
+
+  it("describes and tooltips the coverage rings", () => {
+    const rings = html.slice(html.indexOf('class="viz-rings"'));
+    expect(rings).toContain("<title>1 of 2 files carry intent (50%)</title>");
+    expect(rings).toContain("<title>1 of 3 hunks carry intent (33%)</title>");
+    expect(html).toContain("--allow-gaps");
+  });
+
+  it("describes and tooltips the complexity hotspots", () => {
+    const cx = html.slice(html.indexOf('class="viz-complexity"'));
+    expect(cx).toContain("<title>buildScorecard — CCN 21 (threshold 15) at src/a.ts:31</title>");
+    expect(cx).toContain("independent paths through the code");
+  });
+
   it("renders a visual-summary section with all five charts", () => {
     expect(html).toContain('class="visuals"');
     expect(html).toContain('class="viz-diffmass"');
     expect(html).toContain('class="viz-treemap"');
     expect(html).toContain('class="viz-rings"');
-    expect(html).toContain('class="viz-quadrant"');
+    expect(html).toContain('class="viz-scatter"');
   });
 
   it("labels the diff-mass and treemap charts with the changed file", () => {
@@ -190,11 +222,27 @@ describe("renderHtml", () => {
     expect(html).toContain("33%"); // 1/3 hunks annotated
   });
 
-  it("plots the honesty quadrant with axis labels and a data point", () => {
-    const quad = html.slice(html.indexOf('class="viz-quadrant"'));
-    expect(quad).toContain("blast");
-    expect(quad).toContain("candor");
-    expect(quad).toContain('class="viz-dot"');
+  it("plots the per-file change map with measured axes and a dot per file", () => {
+    const scatter = html.slice(html.indexOf('class="viz-scatter"'));
+    expect(scatter).toContain("downstream reach");
+    expect(scatter).toContain("churn");
+    // src/a.ts carries a CCN-21 hotspot (≥ threshold 15) → flagged red
+    expect(scatter).toContain('class="viz-dot viz-dot-hot"');
+    expect(scatter).toContain("a.ts");
+  });
+
+  it("gives each change-map dot a native tooltip with its measured numbers", () => {
+    const scatter = html.slice(html.indexOf('class="viz-scatter"'));
+    expect(scatter).toContain(
+      "<title>src/a.ts — 2 lines changed · 1 hunk · imported by 1 file · complexity hotspot</title>",
+    );
+  });
+
+  it("renders a change-map legend keying colour, size and the review-first zone", () => {
+    const legend = html.slice(html.indexOf('class="viz-legend"'));
+    expect(legend).toContain("complexity hotspot (CCN ≥ 15)");
+    expect(legend).toContain("more hunks");
+    expect(legend).toContain("review-first zone");
   });
 
   it("renders a claimed Tests section grouped by kind with descriptions and names", () => {

@@ -133,13 +133,12 @@ This is the reviewer's highest-value target, so write it to honesty-rule #3:
   "low risk" while the scorecard flags \`touches auth/, 0 test files\` or a
   changed function jumps to CCN 30 and you never mention it, the contradiction is
   visible at a glance.
-- **There is an "honesty quadrant"** that plots your *claimed* candor (declared
-  risks + intent coverage) against the *measured* blast radius (churn + reach). A
-  large, far-reaching change that declared little lands in a red corner. Padding
-  the ledger with throwaway risks to nudge the dot is pointless — a human reads
-  the prose. Write a ledger the measured facts won't embarrass: address the gap,
-  or name it as a risk. If a hunk added real branching/complexity, the *why* is
-  the place to justify it.
+- **There is a "change map"** that plots each changed file by *measured*
+  downstream reach (how many files import it) against *measured* churn, flagging
+  the ones that also carry a complexity hotspot. The biggest, most depended-on
+  files land in the top-right — that's where a reviewer looks first, so those are
+  the files whose *why* had better be airtight. If a hunk added real
+  branching/complexity, the *why* is the place to justify it.
 
 ### The tests section (\`tests\`)
 

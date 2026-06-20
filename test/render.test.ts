@@ -112,6 +112,12 @@ describe("renderHtml", () => {
     expect(html).toContain("orphan note");
   });
 
+  it("emits the FOUC-restore and switcher scripts", () => {
+    expect(html).toContain("review-intent:theme");            // localStorage key
+    expect(html).toContain("dataset.theme");                  // applies theme on <html>
+    expect(html).toContain('querySelectorAll(".theme-opt")'); // switcher wiring
+  });
+
   it("lists files not present in the diff", () => {
     expect(html).toContain("Intent for files not in this diff");
     expect(html).toContain("src/z.ts");
@@ -307,6 +313,45 @@ describe("renderHtml", () => {
     expect(html).toContain("localStorage");        // persistence
     expect(html).toContain("tb-progress");         // counter target
     expect(html).toContain("IntersectionObserver"); // index active-highlight
+  });
+
+  it("emits a hunk comment box with a stable id and precise line ref", () => {
+    expect(html).toContain('data-ckind="hunk"');
+    expect(html).toContain('data-cid="file-0-hunk-0"');
+    expect(html).toContain('data-ref="src/a.ts:1-3"');
+  });
+
+  it("emits a file-level comment box keyed on the file slug", () => {
+    expect(html).toContain('data-ckind="file"');
+    expect(html).toContain('<textarea class="cinput" data-cid="file-0" data-ref="src/a.ts"');
+  });
+
+  it("renders the feedback panel with page comment, output, and copy button", () => {
+    expect(html).toContain('class="review-feedback"');
+    expect(html).toContain('data-cid="__page__"');
+    expect(html).toContain('class="fb-output"');
+    expect(html).toContain('class="fb-copy"');
+  });
+
+  it("embeds the comment script with the per-change storage key", () => {
+    expect(html).toContain("review-intent:comments:My change@main");
+    expect(html).toContain("Review feedback on");
+  });
+
+  it("renders the guided-tour control and start button", () => {
+    expect(html).toContain('id="tour"');
+    expect(html).toContain('class="tb-tour"');
+  });
+
+  it("injects the tour order from the review ranking", () => {
+    expect(html).toContain('[{"slug":"file-0","path":"src/a.ts"}]');
+  });
+
+  it("emits the theme switcher cogwheel and theme blocks", () => {
+    expect(html).toContain('class="tb-gear"');           // cogwheel button
+    expect(html).toContain('class="theme-menu"');        // popover menu
+    expect(html).toContain('[data-theme="nord"]');       // a theme CSS block
+    expect(html).toContain('data-theme-id="hacker"');    // a menu option
   });
 });
 

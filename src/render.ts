@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import { isTestPath, isCodePath, isNoisePath } from "./scorecard.js";
 import { reviewOrder, type RankedFile } from "./review-order.js";
+import { THEMES, themeCss } from "./themes.js";
 
 /** Pure: produce a self-contained HTML document from the review model. */
 export function renderHtml(model: ReviewModel): string {
@@ -24,6 +25,7 @@ export function renderHtml(model: ReviewModel): string {
 <style>${CSS}</style>
 </head>
 <body>
+${themeScript()}
 ${renderTopbar(model)}
 <header class="page-head" id="top">
   <div class="eyebrow">Intent review <span class="eyebrow-diff">${esc(model.base)}…HEAD</span></div>
@@ -61,15 +63,19 @@ ${movable("diagrams", renderDiagrams(model))}
 </main>
 
 ${renderFilesWithoutChanges(model)}
+${renderFeedbackPanel(model)}
 </div>
 </div>
 
 ${LIGHTBOX}
+${TOUR}
 
 ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
 ${viewedScript(model)}
 ${pinScript(model)}
+${commentScript(model)}
+${tourScript(model, ranked)}
 </body>
 </html>`;
 }
@@ -102,7 +108,7 @@ function pinScript(model: ReviewModel): string {
     // Declaration order — the rail stacks pinned blocks in this order regardless
     // of the order the reader pinned them, so the rail stays predictable.
     var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
-    var wide = window.matchMedia("(min-width: 1400px)");
+    var wide = window.matchMedia("(min-width: 1920px)");
     var nodes = {}, anchors = {};
     document.querySelectorAll(".movable").forEach(function (el) {
       var k = el.getAttribute("data-movable");
@@ -152,14 +158,89 @@ function pinScript(model: ReviewModel): string {
 </script>`;
 }
 
+/** Restore the saved theme before paint (no flash) and wire the cogwheel menu.
+ *  Static string — pure. Same localStorage + <script> pattern as pinScript. */
+function themeScript(): string {
+  return `<script>
+  (function () {
+    var KEY = "review-intent:theme";
+    var root = document.documentElement;
+    function applyId(id) {
+      if (!id || id === "paper") delete root.dataset.theme;
+      else root.dataset.theme = id;
+    }
+    var saved;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyId(saved);
+    document.addEventListener("DOMContentLoaded", function () {
+      var gear = document.querySelector(".tb-gear");
+      var menu = document.querySelector(".theme-menu");
+      if (!gear || !menu) return;
+      var current = saved || "paper";
+      function mark() {
+        menu.querySelectorAll(".theme-opt").forEach(function (o) {
+          o.setAttribute("aria-checked", o.getAttribute("data-theme-id") === current ? "true" : "false");
+        });
+      }
+      function open(v) {
+        menu.hidden = !v;
+        gear.setAttribute("aria-expanded", v ? "true" : "false");
+      }
+      mark();
+      gear.addEventListener("click", function (e) {
+        e.stopPropagation();
+        open(menu.hidden);
+      });
+      menu.querySelectorAll(".theme-opt").forEach(function (o) {
+        o.addEventListener("click", function () {
+          current = o.getAttribute("data-theme-id");
+          applyId(current);
+          try { localStorage.setItem(KEY, current); } catch (e) {}
+          mark();
+          open(false);
+        });
+      });
+      document.addEventListener("click", function (e) {
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== gear) open(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") open(false);
+      });
+    });
+  })();
+</script>`;
+}
+
 /** Slim sticky bar: persistent wayfinding across the long scroll. The progress
  *  counter is updated client-side as files are marked "seen". */
 function renderTopbar(model: ReviewModel): string {
   const n = model.files.length;
+  const groups: string[] = [];
+  const seen = new Set<string>();
+  for (const t of THEMES) if (!seen.has(t.group)) { seen.add(t.group); groups.push(t.group); }
+  const menu = groups
+    .map((g) => {
+      const opts = THEMES.filter((t) => t.group === g)
+        .map(
+          (t) =>
+            `<button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="${esc(t.id)}">${esc(t.label)}</button>`,
+        )
+        .join("");
+      return `<div class="theme-grp"><div class="theme-grp-h">${esc(g)}</div>${opts}</div>`;
+    })
+    .join("");
   return `<div class="topbar">
   <span class="tb-title">${esc(model.title)}</span>
   <span class="tb-progress" data-total="${n}">0 / ${n} reviewed</span>
+  ${n > 0 ? `<button class="tb-tour" type="button">▶ Guided review</button>` : ""}
   <a class="tb-top" href="#top">↑ Top</a>
+  <div class="tb-theme">
+    <button class="tb-gear" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Change theme" title="Change theme">⚙</button>
+    <div class="theme-menu" role="menu" aria-label="Theme" hidden>
+      <button type="button" class="theme-opt" role="menuitemradio" aria-checked="true" data-theme-id="paper">Paper (default)</button>
+      ${menu}
+    </div>
+  </div>
 </div>`;
 }
 
@@ -407,8 +488,8 @@ function rippleNode(
   isChanged: boolean,
 ): string {
   const r = isChanged ? 8 : 5;
-  const fill = isChanged ? C_ACCENT : "#ffffff";
-  const stroke = isChanged ? "#21456f" : "#b8b1a4";
+  const fill = isChanged ? C_ACCENT : "var(--viz-node)";
+  const stroke = isChanged ? "var(--viz-accent-stroke)" : "var(--viz-node-stroke)";
   const ly = isChanged ? p.y - 13 : p.y + 16;
   const tip = isChanged ? `${path} — changed file` : `${path} — imports a changed file`;
   return `<g class="ripple-node">
@@ -433,24 +514,24 @@ interface FileStat {
 
 // Light-canvas palette. Semantic fills (add/del/warn) and a categorical set for
 // the treemap, all tuned to read on the warm-paper background.
-const C_ADD = "#1f9d4d";
-const C_ADD_INK = "#137a36";
-const C_DEL = "#dd574d";
-const C_DEL_INK = "#c0362c";
-const C_WARN = "#c79100";
-const C_ACCENT = "#2f5d9c";
-const C_LINE = "#e3ded3";
+const C_ADD = "var(--viz-add)";
+const C_ADD_INK = "var(--viz-add-ink)";
+const C_DEL = "var(--viz-del)";
+const C_DEL_INK = "var(--viz-del-ink)";
+const C_WARN = "var(--viz-warn)";
+const C_ACCENT = "var(--viz-accent)";
+const C_LINE = "var(--viz-line)";
 
 const CAT_COLOR: Record<FileCategory, string> = {
   test: C_ADD_INK,
   code: C_ACCENT,
-  noise: "#9b958a",
-  other: "#7e776c",
+  noise: "var(--viz-noise)",
+  other: "var(--viz-other)",
 };
 
 const DIR_PALETTE = [
-  "#5b7db1", "#5fa389", "#b08a5a", "#a07ba6",
-  "#c47d72", "#7fa86a", "#d0a85a", "#7a93b8",
+  "var(--viz-s1)", "var(--viz-s2)", "var(--viz-s3)", "var(--viz-s4)",
+  "var(--viz-s5)", "var(--viz-s6)", "var(--viz-s7)", "var(--viz-s8)",
 ];
 
 function fileStats(model: ReviewModel): FileStat[] {
@@ -560,7 +641,7 @@ function renderTreemap(stats: FileStat[]): string {
 
   const cells = rects
     .map((r) => {
-      const stroke = r.hasIntent ? "#ffffff" : C_DEL_INK;
+      const stroke = r.hasIntent ? "var(--viz-cell-stroke)" : C_DEL_INK;
       const sw = r.hasIntent ? 1 : 2;
       const label =
         r.w > 54 && r.h > 18
@@ -897,10 +978,10 @@ const KIND_ORDER = ["unit", "integration", "e2e", "manual"];
 const KIND_COLOR: Record<string, string> = {
   unit: C_ADD_INK,
   integration: C_ACCENT,
-  e2e: "#7a4fa0",
+  e2e: "var(--kind-e2e)",
   manual: C_WARN,
 };
-const kindColor = (key: string): string => KIND_COLOR[key] ?? "#7e776c";
+const kindColor = (key: string): string => KIND_COLOR[key] ?? "var(--viz-other)";
 
 /** Pure: render the agent's human-readable test descriptions, grouped by kind.
  *  Returns "" when none were authored (the section is optional). */
@@ -1067,7 +1148,8 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
       : `<div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>`
   }
-  ${file.hunks.map(renderHunk).join("\n")}
+  ${commentBox(r.slug, file.path, "file")}
+  ${file.hunks.map((h, j) => renderHunk(h, r.index, j, file.path)).join("\n")}
   ${
     file.unmatchedIntents.length
       ? `<div class="unmatched">
@@ -1080,6 +1162,21 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
+/** A reviewer comment affordance: a 💬 toggle + a hidden textarea the comment
+ *  script persists. Pure markup; the textarea carries the data the assembled
+ *  prompt is built from. `cid` is the localStorage key, `ref` the human-readable
+ *  location shown in the prompt. */
+function commentBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
+  const hdrAttr = hdr ? ` data-hdr="${esc(hdr)}"` : "";
+  const ph = kind === "hunk"
+    ? "Note to the agent about this hunk…"
+    : "Note to the agent about this file…";
+  return `<div class="cbox" data-ckind="${kind}">
+    <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬</button>
+    <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} placeholder="${ph}"></textarea>
+  </div>`;
+}
+
 /** Render a what/why pair (the structured per-change intent). */
 function whatWhy(what: string | undefined, why: string): string {
   const whatBlock = what
@@ -1088,7 +1185,9 @@ function whatWhy(what: string | undefined, why: string): string {
   return `<div class="ww">${whatBlock}<div class="why"><span class="lbl">Why</span> ${md(why)}</div></div>`;
 }
 
-function renderHunk(hunk: AnnotatedHunk): string {
+function renderHunk(hunk: AnnotatedHunk, fileIndex: number, hunkIndex: number, path: string): string {
+  const cid = `file-${fileIndex}-hunk-${hunkIndex}`;
+  const ref = `${path}:${hunk.newStart}${hunk.newEnd !== hunk.newStart ? `-${hunk.newEnd}` : ""}`;
   return `<div class="hunk-row">
   <div class="hunk-diff">
     <div class="hunk-header">${esc(hunk.header)}</div>
@@ -1100,6 +1199,7 @@ function renderHunk(hunk: AnnotatedHunk): string {
         ? hunk.intents.map((i) => `<div class="note">${whatWhy(i.what, i.why)}</div>`).join("")
         : `<div class="note missing">⚠ No intent for this hunk.</div>`
     }
+    ${commentBox(cid, ref, "hunk", hunk.header)}
   </aside>
 </div>`;
 }
@@ -1124,6 +1224,28 @@ function renderFilesWithoutChanges(model: ReviewModel): string {
         `<li><code>${esc(f.path)}</code>${f.why ? `: ${md(f.why)}` : ""}</li>`,
     )
     .join("")}</ul>
+</section>`;
+}
+
+/** Gathered review feedback: page-level comment + a live, readonly prompt the
+ *  reviewer copies back to the agent. Assembly happens client-side in
+ *  commentScript; this is the pure markup shell. */
+function renderFeedbackPanel(model: ReviewModel): string {
+  if (model.files.length === 0) return "";
+  return `<section class="review-feedback" id="feedback">
+  <h2>Review feedback</h2>
+  <p class="rf-hint">Comment on any hunk or file with the 💬 buttons, add overall notes here, then copy the assembled prompt back to the agent.</p>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall comment</span>
+    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" placeholder="Overall feedback on the change set…"></textarea>
+  </label>
+  <div class="fb-summary"></div>
+  <h3 class="fb-out-head">Prompt for the agent</h3>
+  <textarea class="fb-output" readonly placeholder="Comments you add are gathered here as a prompt for the agent."></textarea>
+  <div class="fb-actions">
+    <button class="fb-copy" type="button">Copy as prompt</button>
+    <span class="fb-copied" hidden>Copied ✓</span>
+  </div>
 </section>`;
 }
 
@@ -1180,6 +1302,24 @@ const CSS = `
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
   --maxw: 1080px;
+  /* derived (were hard-coded literals; defaults reproduce paper exactly) */
+  --add-border: #c7e2cd; --del-border: #eccac4;
+  --warn-border: #e6d8a8; --accent-border: #cfdcef;
+  --accent-shadow: rgba(47,93,156,.1);
+  --on-accent: #fff;
+  --glass: rgba(255,253,249,.9);
+  --code-add: #115c2c; --code-del: #952c22;
+  /* visual-summary chart palette */
+  --viz-add: #1f9d4d; --viz-add-ink: #137a36;
+  --viz-del: #dd574d; --viz-del-ink: #c0362c;
+  --viz-warn: #c79100; --viz-accent: #2f5d9c; --viz-line: #e3ded3;
+  --viz-node: #ffffff; --viz-node-stroke: #b8b1a4; --viz-accent-stroke: #21456f;
+  --viz-cell-stroke: #ffffff;
+  --viz-noise: #9b958a; --viz-other: #7e776c;
+  --viz-cell-label: #23211d; --viz-zone: rgba(189, 58, 46, 0.09);
+  --kind-e2e: #7a4fa0;
+  --viz-s1: #5b7db1; --viz-s2: #5fa389; --viz-s3: #b08a5a; --viz-s4: #a07ba6;
+  --viz-s5: #c47d72; --viz-s6: #7fa86a; --viz-s7: #d0a85a; --viz-s8: #7a93b8;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -1292,10 +1432,10 @@ body {
   border-radius: 6px; padding: 3px 9px; border: 1px solid var(--line-2);
   color: var(--ink-soft); background: var(--surface-2);
 }
-.tone-danger { background: var(--del-soft); color: var(--del); border-color: #eccac4; }
-.tone-warn { background: var(--warn-soft); color: var(--warn); border-color: #e6d8a8; }
-.tone-info { background: var(--accent-soft); color: var(--accent); border-color: #cfdcef; }
-.tone-ok { background: var(--add-soft); color: var(--add); border-color: #c7e2cd; }
+.tone-danger { background: var(--del-soft); color: var(--del); border-color: var(--del-border); }
+.tone-warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.tone-info { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
+.tone-ok { background: var(--add-soft); color: var(--add); border-color: var(--add-border); }
 
 .risk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .risk-table th {
@@ -1325,7 +1465,7 @@ body {
 .zoomable svg { max-height: 168px; }
 .zoomable .mermaid { max-height: 200px; overflow: hidden; }
 .zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
-.zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px rgba(47,93,156,.1); }
+.zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .zoomable::after {
   content: "⤢ expand"; position: absolute; top: 10px; right: 12px;
   font: 600 10px/1 var(--mono); letter-spacing: .04em; color: var(--accent);
@@ -1337,12 +1477,12 @@ body {
 .viz-label { font-family: var(--mono); font-size: 11px; fill: var(--ink-soft); }
 .viz-num { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
 .viz-axis { stroke: var(--line-2); stroke-width: 1; }
-.viz-cell-label { fill: #23211d; font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
 .viz-rings { display: flex; gap: 8px; justify-content: space-around; }
 .viz-ring-svg { max-width: 150px; }
 .viz-ring-pct { fill: var(--ink); font-size: 22px; font-weight: 700; font-family: var(--sans); }
 .viz-ring-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
-.viz-danger { fill: rgba(189, 58, 46, 0.09); }
+.viz-danger { fill: var(--viz-zone); }
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
@@ -1352,7 +1492,7 @@ body {
 .viz-lg-muted { color: var(--muted); }
 .viz-lg-dot { flex: none; }
 .zoomable .viz-lg-dot { max-height: none; }
-.viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: rgba(189, 58, 46, 0.09); border: 1px solid #eccac4; }
+.viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: var(--viz-zone); border: 1px solid var(--del-border); }
 .ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
 .ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
 .ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
@@ -1435,10 +1575,10 @@ table.diff { width: 100%; border-collapse: collapse; font-family: var(--mono); f
 .sign { width: 1%; user-select: none; color: var(--muted); }
 .code { width: 100%; color: var(--ink); }
 .ln-add { background: var(--add-soft); }
-.ln-add .code { color: #115c2c; }
+.ln-add .code { color: var(--code-add); }
 .ln-add .sign { color: var(--add); }
 .ln-del { background: var(--del-soft); }
-.ln-del .code { color: #952c22; }
+.ln-del .code { color: var(--code-del); }
 .ln-del .sign { color: var(--del); }
 .hunk-notes {
   border-left: 1px solid var(--line); padding: 14px 16px; background: var(--paper);
@@ -1456,7 +1596,7 @@ table.diff { width: 100%; border-collapse: collapse; font-family: var(--mono); f
 }
 .missing {
   color: var(--del); font-weight: 600; font-size: 13px;
-  background: var(--del-soft); border: 1px solid #eccac4; border-radius: 8px;
+  background: var(--del-soft); border: 1px solid var(--del-border); border-radius: 8px;
   padding: 10px 12px;
 }
 .file-intent.missing { margin: 0; border-radius: 0; border-left: 0; border-right: 0; }
@@ -1515,7 +1655,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   /* Align the bar's content with the page measure on wide screens; floor to a
      small inset on narrow ones. */
   padding: 9px max(18px, calc((100% - var(--maxw)) / 2 + 40px));
-  background: rgba(255,253,249,.9);
+  background: var(--glass);
   backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
   font: 12px/1 var(--mono);
 }
@@ -1523,6 +1663,31 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .tb-title { flex: 0 1 auto; min-width: 0; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-progress { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tb-top { flex: none; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.tb-theme { position: relative; }
+.tb-gear {
+  background: none; border: 0; cursor: pointer; font-size: 15px;
+  color: var(--muted); padding: 4px 6px; line-height: 1; border-radius: 6px;
+}
+.tb-gear:hover { color: var(--ink); background: var(--surface-2); }
+.theme-menu {
+  position: absolute; right: 0; top: 130%; z-index: 50;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; padding: 8px; min-width: 180px;
+  box-shadow: 0 10px 30px rgba(33,31,27,.18);
+  display: grid; gap: 8px;
+}
+.theme-menu[hidden] { display: none; }
+.theme-grp-h {
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 2px 4px 4px;
+}
+.theme-opt {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  cursor: pointer; padding: 5px 8px; border-radius: 6px; color: var(--ink-soft);
+  font: 13px/1.2 var(--sans);
+}
+.theme-opt:hover { background: var(--surface-2); color: var(--ink); }
+.theme-opt[aria-checked="true"] { color: var(--accent); font-weight: 600; }
 
 /* ── Review-first callout ── */
 .review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
@@ -1537,7 +1702,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   background: var(--surface); text-decoration: none; color: var(--ink);
   transition: border-color .15s, box-shadow .15s;
 }
-.rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px rgba(47,93,156,.1); }
+.rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .rf-rank { font: 700 13px/1 var(--mono); color: var(--accent); }
 .rf-path { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
 .rf-reasons { display: flex; flex-wrap: wrap; gap: 4px 8px; width: 100%; }
@@ -1588,8 +1753,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   font: 600 10px/1.5 var(--mono); border-radius: 4px; padding: 2px 6px;
   background: var(--surface); border: 1px solid var(--line-2); color: var(--ink-soft);
 }
-.fbadge-hot { color: var(--del); border-color: #eccac4; background: var(--del-soft); }
-.fbadge-gap { color: var(--warn); border-color: #e6d8a8; background: var(--warn-soft); }
+.fbadge-hot { color: var(--del); border-color: var(--del-border); background: var(--del-soft); }
+.fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
 .viewed-toggle {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
@@ -1621,7 +1786,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 /* The pin affordance only exists where there's a rail to pin to (wide screens). */
 .pin-btn { display: none; }
 
-@media (min-width: 1400px) {
+@media (min-width: 1920px) {
   .pin-btn {
     display: inline-flex; align-items: center; justify-content: center;
     position: absolute; top: 12px; right: 14px; z-index: 3;
@@ -1634,10 +1799,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 
   /* The two-pane shell engages only once something is pinned; with an empty
      rail the page stays the calm centred column it is below this width. */
-  body.has-pins .page-head { max-width: 1560px; }
-  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1560px) / 2 + 40px)); }
+  body.has-pins .page-head { max-width: 1840px; }
+  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1840px) / 2 + 40px)); }
   body.has-pins .layout {
-    max-width: 1560px; margin: 0 auto; padding: 0 40px;
+    max-width: 1840px; margin: 0 auto; padding: 0 40px;
     display: grid; grid-template-columns: 320px minmax(0, 1fr);
     gap: 36px; align-items: start;
   }
@@ -1663,6 +1828,85 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   body.has-pins .rail .risks { overflow-x: auto; }
   body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Review comments ── */
+.cbox { margin-top: 10px; }
+.hunk-notes .cbox { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+.cbtn {
+  font-size: 12px; line-height: 1; cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px;
+}
+.cbtn:hover { border-color: var(--accent); }
+.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); }
+.cbox.has-comment .cbtn::after { content: " •"; color: var(--accent); }
+.cinput {
+  display: none; width: 100%; margin-top: 8px; resize: vertical; min-height: 54px;
+  font: 13px/1.5 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
+}
+.cbox.open .cinput { display: block; }
+
+/* ── Review feedback panel ── */
+.review-feedback { max-width: var(--maxw); margin: 0 auto; padding: 36px 40px; border-top: 1px solid var(--line); }
+.review-feedback > h2 {
+  margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.rf-hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; max-width: 72ch; }
+.fb-general { display: block; margin-bottom: 14px; }
+.fb-general-lbl { display: block; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+.fb-general-input {
+  display: block; width: 100%; resize: vertical; min-height: 60px;
+  font: 13px/1.5 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
+}
+.fb-summary { font: 12px/1 var(--mono); color: var(--muted); margin-bottom: 14px; }
+.fb-out-head { margin: 0 0 8px; font-size: 13px; font-weight: 680; color: var(--ink-soft); }
+.fb-output {
+  display: block; width: 100%; min-height: 160px; resize: vertical;
+  font: 12.5px/1.55 var(--mono); color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 12px 14px;
+}
+.fb-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.fb-copy {
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--on-accent);
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 9px 16px;
+}
+.fb-copy:hover { filter: brightness(1.06); }
+.fb-copied { color: var(--add); font: 600 12px/1 var(--mono); }
+
+/* ── Guided tour ── */
+.tb-tour {
+  flex: none; font: 600 11px/1 var(--mono); cursor: pointer; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 6px; padding: 5px 9px;
+}
+.tb-tour:hover { border-color: var(--accent); }
+.tour {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 80;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 10px 14px; box-shadow: 0 10px 30px rgba(33,31,27,.18);
+  font: 12px/1.2 var(--mono); max-width: calc(100vw - 32px);
+}
+.tour[hidden] { display: none; }
+.tour-status { color: var(--ink-soft); }
+.tour-status b { color: var(--ink); }
+.tour-path { font-size: 11.5px; background: none; padding: 0; color: var(--accent); overflow-wrap: anywhere; }
+.tour-btn {
+  flex: none; font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 10px;
+}
+.tour-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.tour-btn:disabled { opacity: .4; cursor: default; }
+.tour-flash { animation: tour-flash 1.2s ease-out; }
+@keyframes tour-flash {
+  0% { box-shadow: 0 0 0 3px var(--accent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+@media (max-width: 560px) {
+  .tour { flex-wrap: wrap; justify-content: center; bottom: 10px; }
+}
+${themeCss()}
 `;
 
 const MERMAID_SCRIPT = `<script type="module">
@@ -1674,6 +1918,14 @@ const MERMAID_SCRIPT = `<script type="module">
 const LIGHTBOX = `<div id="lightbox" role="dialog" aria-modal="true" aria-label="Figure detail">
   <button class="lightbox-close" type="button" aria-label="Close">✕</button>
   <div class="lightbox-stage"></div>
+</div>`;
+
+/** Fixed guided-review control, hidden until the tour starts. */
+const TOUR = `<div class="tour" id="tour" hidden role="region" aria-label="Guided review">
+  <button class="tour-btn tour-prev" type="button">‹ Prev</button>
+  <span class="tour-status">Reviewing <b class="tour-cur">1</b> of <b class="tour-total">0</b> — <code class="tour-path"></code></span>
+  <button class="tour-btn tour-next" type="button">Next ›</button>
+  <button class="tour-btn tour-exit" type="button" aria-label="Exit guided review">✕</button>
 </div>`;
 
 /** Static, dependency-free progressive enhancement: persist "seen" files,
@@ -1722,6 +1974,147 @@ function viewedScript(model: ReviewModel): string {
       }, { rootMargin: "-45% 0px -45% 0px" });
       files.forEach(function (f) { io.observe(f); });
     }
+  })();
+</script>`;
+}
+
+/** Static enhancement: persist reviewer comments (per-change, like viewed
+ *  state), keep the gathered-prompt textarea + summary in sync, and copy. The
+ *  prompt is assembled from the live textareas in DOM order (= review order). */
+function commentScript(model: ReviewModel): string {
+  const KEY = `review-intent:comments:${model.title}@${model.base}`;
+  const META = JSON.stringify({ title: model.title, base: model.base }).replace(/<\//g, "<\\/");
+  return `<script>
+  (function () {
+    var KEY = ${JSON.stringify(KEY).replace(/<\//g, "<\\/")};
+    var META = ${META};
+    var store;
+    try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
+    function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+
+    var inputs = Array.prototype.slice.call(document.querySelectorAll(".cinput"));
+    var out = document.querySelector(".fb-output");
+    var summary = document.querySelector(".fb-summary");
+    function clean(s) { return s.replace(/\\r/g, "").trim(); }
+    function mark(t) { var b = t.closest(".cbox"); if (b) b.classList.toggle("has-comment", !!clean(t.value)); }
+    function reveal(t) { var b = t.closest(".cbox"); if (b) b.classList.add("open"); }
+
+    function assemble() {
+      var lines = [], count = 0;
+      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      files.forEach(function (f) {
+        var code = f.querySelector(".path");
+        var path = code ? code.textContent : f.id;
+        var section = [];
+        var fc = f.querySelector('.cbox[data-ckind="file"] .cinput');
+        if (fc && clean(fc.value)) { section.push("- " + clean(fc.value).replace(/\\n/g, "\\n  ")); count++; }
+        f.querySelectorAll('.cbox[data-ckind="hunk"] .cinput').forEach(function (hc) {
+          if (clean(hc.value)) {
+            var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
+            section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
+            section.push("- " + clean(hc.value).replace(/\\n/g, "\\n  "));
+            count++;
+          }
+        });
+        if (section.length) { lines.push("## " + path); lines.push.apply(lines, section); lines.push(""); }
+      });
+      var pg = document.querySelector('.cinput[data-cid="__page__"]');
+      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + clean(pg.value).replace(/\\n/g, "\\n  ")); lines.push(""); count++; }
+      if (out) {
+        if (count === 0) { out.value = ""; }
+        else {
+          var head = 'Review feedback on "' + META.title + '" (' + META.base + "...HEAD).\\n" +
+            "Sign-off: " + done + " / " + files.length + " files reviewed. Address each item below.\\n";
+          out.value = head + "\\n" + lines.join("\\n").replace(/\\n+$/, "") + "\\n";
+        }
+      }
+      if (summary) {
+        summary.textContent = done + " / " + files.length + " files reviewed · " + count + " comment" + (count === 1 ? "" : "s");
+      }
+    }
+
+    inputs.forEach(function (t) {
+      var cid = t.getAttribute("data-cid");
+      if (store[cid]) { t.value = store[cid]; reveal(t); }
+      mark(t);
+      t.addEventListener("input", function () {
+        if (clean(t.value)) store[cid] = t.value; else delete store[cid];
+        save(); mark(t); assemble();
+      });
+    });
+
+    document.querySelectorAll(".cbtn").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var box = b.closest(".cbox"); if (!box) return;
+        box.classList.toggle("open");
+        if (box.classList.contains("open")) { var ta = box.querySelector(".cinput"); if (ta) ta.focus(); }
+      });
+    });
+
+    var copyBtn = document.querySelector(".fb-copy"), copied = document.querySelector(".fb-copied");
+    if (copyBtn && out) {
+      copyBtn.addEventListener("click", function () {
+        assemble();
+        var text = out.value; if (!text) return;
+        function flash() { if (copied) { copied.hidden = false; setTimeout(function () { copied.hidden = true; }, 1600); } }
+        out.select();
+        var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(flash, function () { if (ok) flash(); });
+        } else if (ok) { flash(); }
+      });
+    }
+
+    assemble();
+  })();
+</script>`;
+}
+
+/** Static enhancement: a numbered prev/next walkthrough of the changed files in
+ *  review-order. Order is injected from reviewOrder so it matches the page. Does
+ *  not touch viewed state — navigation and sign-off stay separate. */
+function tourScript(model: ReviewModel, ranked: RankedFile[]): string {
+  const ORDER = JSON.stringify(ranked.map((r) => ({ slug: r.slug, path: r.path }))).replace(/<\//g, "<\\/");
+  return `<script>
+  (function () {
+    var ORDER = ${ORDER};
+    var tour = document.getElementById("tour");
+    var startBtn = document.querySelector(".tb-tour");
+    if (!tour || !startBtn || !ORDER.length) return;
+    var cur = tour.querySelector(".tour-cur"), total = tour.querySelector(".tour-total");
+    var pathEl = tour.querySelector(".tour-path");
+    var prev = tour.querySelector(".tour-prev"), next = tour.querySelector(".tour-next"), exit = tour.querySelector(".tour-exit");
+    var i = 0, flashTimer;
+    if (total) total.textContent = ORDER.length;
+    function go(n) {
+      i = Math.max(0, Math.min(ORDER.length - 1, n));
+      var item = ORDER[i], el = document.getElementById(item.slug);
+      if (el) {
+        if (el.tagName === "DETAILS") el.open = true;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.add("tour-flash");
+        clearTimeout(flashTimer);
+        flashTimer = setTimeout(function () { el.classList.remove("tour-flash"); }, 1200);
+      }
+      if (cur) cur.textContent = i + 1;
+      if (pathEl) pathEl.textContent = item.path;
+      if (prev) prev.disabled = i === 0;
+      if (next) next.disabled = i === ORDER.length - 1;
+    }
+    function start() { tour.hidden = false; document.body.classList.add("touring"); go(0); }
+    function close() { tour.hidden = true; document.body.classList.remove("touring"); }
+    startBtn.addEventListener("click", start);
+    if (prev) prev.addEventListener("click", function () { go(i - 1); });
+    if (next) next.addEventListener("click", function () { go(i + 1); });
+    if (exit) exit.addEventListener("click", close);
+    document.addEventListener("keydown", function (e) {
+      if (tour.hidden) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); go(i + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); go(i - 1); }
+      else if (e.key === "Escape") { close(); }
+    });
   })();
 </script>`;
 }

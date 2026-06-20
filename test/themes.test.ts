@@ -1,0 +1,68 @@
+import { describe, it, expect } from "vitest";
+import { THEMES, TOKEN_KEYS, themeCss, makeTheme } from "../src/themes.js";
+
+describe("themes", () => {
+  it("every theme defines every token key", () => {
+    for (const t of THEMES) {
+      for (const k of TOKEN_KEYS) {
+        expect(t.tokens[k], `${t.id} missing ${k}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("theme ids are unique and DOM-safe", () => {
+    const ids = THEMES.map((t) => t.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
+  });
+
+  it("ships the full catalog", () => {
+    const ids = THEMES.map((t) => t.id);
+    expect(ids).toEqual([
+      "dark", "hacker", "solarized-light", "solarized-dark", "nord",
+      "gruvbox", "catppuccin", "github", "high-contrast", "blueprint",
+      "newsprint", "sepia", "synthwave",
+    ]);
+  });
+
+  it("themeCss emits one selector per theme and no :root", () => {
+    const css = themeCss();
+    for (const t of THEMES) {
+      expect(css).toContain(`[data-theme="${t.id}"]`);
+    }
+    expect(css).not.toContain(":root");
+  });
+
+  it("makeTheme expands core values into the full token set", () => {
+    const t = makeTheme("x", "X", "Test", {
+      paper: "#000", surface: "#111", surface2: "#222", ink: "#fff",
+      inkSoft: "#ddd", muted: "#999", line: "#333", line2: "#444",
+      accent: "#0af", accentSoft: "#013", add: "#0f0", addSoft: "#020",
+      del: "#f00", delSoft: "#200", warn: "#fa0", warnSoft: "#210",
+    });
+    for (const k of TOKEN_KEYS) expect(t.tokens[k]).toBeTruthy();
+    expect(t.tokens["--paper"]).toBe("#000");
+    expect(t.tokens["--add-border"]).toBe("#0f0"); // derived aliases core
+  });
+
+  it("makeTheme emits exactly TOKEN_KEYS when no font overrides are given", () => {
+    // Guards both directions: a token added to makeTheme but not TOKEN_KEYS
+    // (or vice versa) must fail here, so the two lists can't silently drift.
+    const t = makeTheme("x", "X", "Test", {
+      paper: "#000", surface: "#111", surface2: "#222", ink: "#fff",
+      inkSoft: "#ddd", muted: "#999", line: "#333", line2: "#444",
+      accent: "#0af", accentSoft: "#013", add: "#0f0", addSoft: "#020",
+      del: "#f00", delSoft: "#200", warn: "#fa0", warnSoft: "#210",
+    });
+    expect(new Set(Object.keys(t.tokens))).toEqual(new Set(TOKEN_KEYS));
+  });
+
+  it("themes only define keys in the contract (plus optional --sans/--mono)", () => {
+    const allowed = new Set<string>([...TOKEN_KEYS, "--sans", "--mono"]);
+    for (const t of THEMES) {
+      for (const k of Object.keys(t.tokens)) {
+        expect(allowed.has(k), `${t.id} emits unknown token ${k}`).toBe(true);
+      }
+    }
+  });
+});

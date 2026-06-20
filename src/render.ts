@@ -37,6 +37,8 @@ export function renderHtml(model: ReviewModel): string {
 
 ${renderVitals(model)}
 
+${renderFileIndex(ranked)}
+
 ${renderBlastRadius(model)}
 
 ${renderVisuals(model)}
@@ -878,6 +880,36 @@ function fileBadges(r: RankedFile): string {
   if (r.missingIntent)
     b.push(`<span class="fbadge fbadge-gap" title="some of this file has no written intent">⚠ intent</span>`);
   return `<span class="fbadges">${b.join("")}</span>`;
+}
+
+/** The spine: every changed file as a clickable row, in review-priority order,
+ *  carrying its measured signals. Links jump to the file's detail <details>. */
+function renderFileIndex(ranked: RankedFile[]): string {
+  if (ranked.length === 0) return "";
+  const rows = ranked
+    .map(
+      (r) => `<li class="fi-row">
+    <a class="fi-link" href="#${r.slug}">
+      <span class="fi-rank">#${r.rank}</span>
+      <span class="status status-${r.status}">${r.status}</span>
+      <code class="fi-path">${esc(r.path)}</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+${r.added} −${r.removed}</span>
+        ${r.fanIn ? `<span class="fi-reach" title="dependents (reach)">→ ${r.fanIn}</span>` : ""}
+        ${r.hotspot ? `<span class="fi-hot" title="complexity hotspot">CCN ${r.maxCcn}</span>` : ""}
+        ${r.missingIntent ? `<span class="fi-gap" title="unexplained change">⚠</span>` : ""}
+      </span>
+    </a>
+  </li>`,
+    )
+    .join("\n  ");
+  const n = ranked.length;
+  return `<nav class="file-index" aria-label="Changed files">
+  <h2>Files <span class="muted fi-count">${n} changed · review-ordered</span></h2>
+  <ol class="fi-list">
+  ${rows}
+  </ol>
+</nav>`;
 }
 
 function renderFile(file: AnnotatedFile, r: RankedFile): string {

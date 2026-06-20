@@ -258,6 +258,14 @@ describe("renderHtml", () => {
     expect(tests).toContain(">integration<");
   });
 
+  it("renders a clickable, review-ordered file index", () => {
+    expect(html).toContain('class="file-index"');
+    const idx = html.slice(html.indexOf('class="file-index"'));
+    expect(idx).toContain('href="#file-0"'); // links into the file's detail section
+    expect(idx).toContain("src/a.ts");
+    expect(idx).toContain("1 changed");      // count line
+  });
+
   it("renders each file as a collapsible section with a stable anchor id", () => {
     expect(html).toContain('<details class="file" id="file-0" open>');
     expect(html).toContain('<summary class="file-head">');

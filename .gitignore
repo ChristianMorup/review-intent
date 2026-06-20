@@ -10,3 +10,6 @@ coverage/
 # Demo app is its own git repo, scaffolded by demo/capture
 demo/widget-api/
 demo/out/
+
+# Capture tooling dependencies (installed locally, not committed)
+demo/capture/node_modules/

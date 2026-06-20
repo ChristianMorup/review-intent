@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>review-intent demo — terminal</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #1a1b26;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1440px;
+    height: 900px;
+    overflow: hidden;
+    font-family: ui-monospace, "Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+
+  .window {
+    width: 1100px;
+    background: #16161e;
+    border-radius: 12px;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
+    overflow: hidden;
+  }
+
+  .titlebar {
+    background: #24283b;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    user-select: none;
+  }
+
+  .dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+  }
+  .dot-red    { background: #ff5f57; }
+  .dot-yellow { background: #ffbd2e; }
+  .dot-green  { background: #28c840; }
+
+  .titlebar-label {
+    flex: 1;
+    text-align: center;
+    color: #565f89;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    margin-right: 39px; /* balance the dots */
+  }
+
+  .terminal {
+    padding: 22px 28px 28px;
+    min-height: 650px;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #c0caf5;
+  }
+
+  .line { white-space: pre; }
+
+  .prompt-prefix {
+    color: #7aa2f7;
+    font-weight: 600;
+  }
+
+  .prompt-path {
+    color: #9ece6a;
+  }
+
+  .prompt-git {
+    color: #e0af68;
+  }
+
+  .prompt-arrow {
+    color: #7aa2f7;
+  }
+
+  .cmd-text {
+    color: #cdd6f4;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 9px;
+    height: 1.1em;
+    background: #7aa2f7;
+    vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  .cursor.hidden { display: none; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+
+  /* output colors */
+  .out-dim    { color: #565f89; }
+  .out-file   { color: #7aa2f7; }
+  .out-add    { color: #9ece6a; }
+  .out-meta   { color: #bb9af7; }
+  .out-ok     { color: #9ece6a; }
+  .out-info   { color: #7dcfff; }
+  .out-warn   { color: #e0af68; }
+
+  .blank { height: 0.5em; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="titlebar">
+    <span class="dot dot-red"></span>
+    <span class="dot dot-yellow"></span>
+    <span class="dot dot-green"></span>
+    <span class="titlebar-label">widget-api — zsh — 1100×36</span>
+  </div>
+  <div class="terminal" id="term"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const term = document.getElementById("term");
+
+  // --- helpers ---
+
+  function makePromptHTML() {
+    return '<span class="prompt-prefix">&#x276F;</span> '
+         + '<span class="prompt-path">~/work/widget-api</span> '
+         + '<span class="prompt-git">(feature/per-user-cache)</span> '
+         + '<span class="prompt-arrow"> &#x276F;</span> ';
+  }
+
+  // Current typing line node + cursor
+  let currentLine = null;
+  let currentSpan = null;
+  let cursorEl = null;
+
+  function newPromptLine() {
+    const line = document.createElement("div");
+    line.className = "line";
+    const promptSpan = document.createElement("span");
+    promptSpan.innerHTML = makePromptHTML();
+    line.appendChild(promptSpan);
+
+    currentSpan = document.createElement("span");
+    currentSpan.className = "cmd-text";
+    line.appendChild(currentSpan);
+
+    cursorEl = document.createElement("span");
+    cursorEl.className = "cursor";
+    line.appendChild(cursorEl);
+
+    term.appendChild(line);
+    currentLine = line;
+  }
+
+  function hideCursor() {
+    if (cursorEl) cursorEl.className = "cursor hidden";
+  }
+
+  function showCursor() {
+    if (cursorEl) cursorEl.className = "cursor";
+  }
+
+  function appendOutputLine(html, cls) {
+    const line = document.createElement("div");
+    line.className = "line" + (cls ? " " + cls : "");
+    line.innerHTML = html;
+    term.appendChild(line);
+  }
+
+  function appendBlank() {
+    const d = document.createElement("div");
+    d.className = "blank";
+    term.appendChild(d);
+  }
+
+  // Type chars one-at-a-time; returns a promise that resolves when done
+  function typeText(text, charDelay) {
+    return new Promise((resolve) => {
+      let i = 0;
+      function next() {
+        if (i >= text.length) { resolve(); return; }
+        currentSpan.textContent += text[i++];
+        setTimeout(next, charDelay);
+      }
+      next();
+    });
+  }
+
+  // Fixed setTimeout-based scheduler (no Date/random)
+  // queue: array of { delay, fn }  (delay = ms from previous item)
+  function runQueue(queue) {
+    let acc = 0;
+    for (const { delay, fn } of queue) {
+      acc += delay;
+      setTimeout(fn, acc);
+    }
+    return acc; // total ms
+  }
+
+  // --- content ---
+
+  // Command 1: git switch
+  const CMD1 = "git switch feature/per-user-cache";
+  const CMD1_OUT = [
+    { html: "Switched to branch 'feature/per-user-cache'", cls: "out-ok" },
+    { html: "Your branch is up to date with 'origin/feature/per-user-cache'.", cls: "out-dim" },
+  ];
+
+  // Command 2: git diff --stat
+  const CMD2 = "git diff --stat main...HEAD";
+  const CMD2_OUT = [
+    { html: ' <span class="out-file">.gitignore</span>          |  3 <span class="out-add">+++</span>', cls: "" },
+    { html: ' <span class="out-file">package.json</span>        |  5 <span class="out-add">++++-</span>', cls: "" },
+    { html: ' <span class="out-file">src/api/handler.js</span>  |  8 <span class="out-add">+++++</span><span class="out-warn">---</span>', cls: "" },
+    { html: ' <span class="out-file">src/auth/session.js</span> |  8 <span class="out-add">++++++</span><span class="out-warn">--</span>', cls: "" },
+    { html: ' <span class="out-file">src/cache/index.js</span>  |  2 <span class="out-add">+</span><span class="out-warn">-</span>', cls: "" },
+    { html: ' <span class="out-file">src/cache/store.js</span>  | 55 <span class="out-add">+++++++++++++++++++++++++++++++++++++++++++++++++</span><span class="out-warn">-----</span>', cls: "" },
+    { html: ' <span class="out-file">test/cache.test.js</span>  | 23 <span class="out-add">++++++++++++++++</span><span class="out-warn">------</span>', cls: "" },
+    { html: ' 7 files changed, 86 insertions(+), 18 deletions(-)', cls: "out-meta" },
+  ];
+
+  // Command 3: npx @christianmorup/review-intent
+  const CMD3 = "npx @christianmorup/review-intent";
+  const CMD3_OUT = [
+    { html: '<span class="out-dim">Need to install the following packages:</span>', cls: "" },
+    { html: '<span class="out-dim">  @christianmorup/review-intent@latest</span>', cls: "" },
+    { html: '', cls: "" },
+    { html: '<span class="out-info">  scanning repo for reach graph…</span>', cls: "" },
+    { html: '<span class="out-info">  running complexity analysis…</span>', cls: "" },
+    { html: '<span class="out-info">  joining intent artifact…</span>', cls: "" },
+    { html: '<span class="out-info">  rendering HTML…</span>', cls: "" },
+    { html: '', cls: "" },
+    { html: '<span class="out-ok">&#x2713;</span> <span class="out-ok">completeness gate passed</span> <span class="out-dim">(7/7 files, 12/12 hunks annotated)</span>', cls: "" },
+    { html: '<span class="out-ok">&#x2713;</span> <span class="out-ok">wrote review.html</span>', cls: "" },
+    { html: '<span class="out-ok">&#x276F;</span> <span class="out-info">opening review.html</span>', cls: "" },
+  ];
+
+  // --- build the timeline ---
+
+  // We build a flat list of actions with absolute offsets from t=0.
+  // typeText is async so we can't use it directly in runQueue;
+  // instead we'll schedule everything deterministically.
+
+  // Helper: compute how long it takes to type N chars at charDelay ms/char
+  function typeMs(text, charDelay) { return text.length * charDelay; }
+
+  const CHAR_DELAY_NORMAL = 42; // ms per char, typical human
+  const CHAR_DELAY_FAST   = 22;
+  const POST_CMD_PAUSE    = 180; // ms after last char before "enter"
+  const OUTPUT_LINE_DELAY = 80;  // ms between output lines
+  const INTER_CMD_PAUSE   = 900; // pause between commands (cursor blinks)
+
+  let t = 400; // initial pause before first prompt appears
+
+  const actions = []; // { at: ms, fn: () => void }
+
+  function at(ms, fn) { actions.push({ at: ms, fn }); }
+
+  // --- CMD 1 ---
+  at(t, () => { newPromptLine(); });
+  t += 300;
+  // Type CMD1
+  {
+    const chars = CMD1.split("");
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      at(t, ((c) => () => { currentSpan.textContent += c; })(ch));
+      t += CHAR_DELAY_NORMAL;
+    }
+  }
+  t += POST_CMD_PAUSE;
+  at(t, () => { hideCursor(); });
+  t += 120;
+  // Output lines
+  for (const outLine of CMD1_OUT) {
+    at(t, ((o) => () => { appendOutputLine(o.html, o.cls); })(outLine));
+    t += OUTPUT_LINE_DELAY;
+  }
+  t += INTER_CMD_PAUSE;
+  at(t, () => { appendBlank(); });
+
+  // --- CMD 2 ---
+  at(t, () => { newPromptLine(); });
+  t += 300;
+  {
+    const chars = CMD2.split("");
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      at(t, ((c) => () => { currentSpan.textContent += c; })(ch));
+      t += CHAR_DELAY_NORMAL;
+    }
+  }
+  t += POST_CMD_PAUSE;
+  at(t, () => { hideCursor(); });
+  t += 120;
+  for (const outLine of CMD2_OUT) {
+    at(t, ((o) => () => { appendOutputLine(o.html, o.cls); })(outLine));
+    t += OUTPUT_LINE_DELAY;
+  }
+  t += INTER_CMD_PAUSE;
+  at(t, () => { appendBlank(); });
+
+  // --- CMD 3 ---
+  at(t, () => { newPromptLine(); });
+  t += 300;
+  {
+    const chars = CMD3.split("");
+    for (let i = 0; i < chars.length; i++) {
+      const ch = chars[i];
+      at(t, ((c) => () => { currentSpan.textContent += c; })(ch));
+      t += CHAR_DELAY_FAST;
+    }
+  }
+  t += POST_CMD_PAUSE;
+  at(t, () => { hideCursor(); });
+  t += 300;
+  for (const outLine of CMD3_OUT) {
+    at(t, ((o) => () => { appendOutputLine(o.html, o.cls); })(outLine));
+    t += OUTPUT_LINE_DELAY + 60;
+  }
+  t += 700;
+  // Final idle prompt
+  at(t, () => { appendBlank(); newPromptLine(); showCursor(); });
+
+  // Done flag (1 second after the final prompt)
+  const DONE_AT = t + 1000;
+  at(DONE_AT, () => {
+    document.body.setAttribute("data-done", "1");
+    document.title = "done";
+  });
+
+  // Schedule everything
+  for (const { at: ms, fn } of actions) {
+    setTimeout(fn, ms);
+  }
+
+})();
+</script>
+</body>
+</html>

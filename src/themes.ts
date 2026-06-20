@@ -87,7 +87,7 @@ export const THEMES: Theme[] = [
     line: "#34322c", line2: "#44413a",
     accent: "#6fa3e0", accentSoft: "#20303f",
     add: "#56c07a", addSoft: "#18301f", del: "#e8786c", delSoft: "#3a201d",
-    warn: "#d6a64a", warnSoft: "#332a16",
+    warn: "#d6a64a", warnSoft: "#332a16", onAccent: "#000",
   }),
   makeTheme("hacker", "Hacker", "Playful", {
     paper: "#000800", surface: "#021202", surface2: "#001a00",
@@ -104,7 +104,7 @@ export const THEMES: Theme[] = [
     line: "#eee8d5", line2: "#d6cfbb",
     accent: "#268bd2", accentSoft: "#dcebf2",
     add: "#5f6d00", addSoft: "#eef0d8", del: "#dc322f", delSoft: "#f6e0db",
-    warn: "#8a6700", warnSoft: "#f3ead0",
+    warn: "#8a6700", warnSoft: "#f3ead0", onAccent: "#000",
   }),
   makeTheme("solarized-dark", "Solarized Dark", "Dev favorites", {
     paper: "#002b36", surface: "#073642", surface2: "#003744",
@@ -112,7 +112,7 @@ export const THEMES: Theme[] = [
     line: "#0a4250", line2: "#135561",
     accent: "#268bd2", accentSoft: "#03323e",
     add: "#859900", addSoft: "#14331f", del: "#dc322f", delSoft: "#33161a",
-    warn: "#b58900", warnSoft: "#2e2812",
+    warn: "#b58900", warnSoft: "#2e2812", onAccent: "#000",
   }),
   makeTheme("nord", "Nord", "Dev favorites", {
     paper: "#2e3440", surface: "#3b4252", surface2: "#434c5e",
@@ -120,7 +120,7 @@ export const THEMES: Theme[] = [
     line: "#434c5e", line2: "#4c566a",
     accent: "#88c0d0", accentSoft: "#2b333f",
     add: "#a3be8c", addSoft: "#2c3a2e", del: "#bf616a", delSoft: "#3a2a2c",
-    warn: "#ebcb8b", warnSoft: "#3a3424",
+    warn: "#ebcb8b", warnSoft: "#3a3424", onAccent: "#000",
   }),
   makeTheme("gruvbox", "Gruvbox", "Dev favorites", {
     paper: "#282828", surface: "#32302f", surface2: "#3c3836",
@@ -128,7 +128,7 @@ export const THEMES: Theme[] = [
     line: "#3c3836", line2: "#504945",
     accent: "#83a598", accentSoft: "#2b3331",
     add: "#b8bb26", addSoft: "#2f3318", del: "#fb4934", delSoft: "#3a201c",
-    warn: "#fabd2f", warnSoft: "#3a3014",
+    warn: "#fabd2f", warnSoft: "#3a3014", onAccent: "#000",
   }),
   makeTheme("catppuccin", "Catppuccin", "Dev favorites", {
     paper: "#1e1e2e", surface: "#313244", surface2: "#45475a",
@@ -136,7 +136,7 @@ export const THEMES: Theme[] = [
     line: "#313244", line2: "#585b70",
     accent: "#89b4fa", accentSoft: "#2a2c41",
     add: "#a6e3a1", addSoft: "#26342a", del: "#f38ba8", delSoft: "#361f2a",
-    warn: "#f9e2af", warnSoft: "#36321f",
+    warn: "#f9e2af", warnSoft: "#36321f", onAccent: "#000",
   }),
   makeTheme("github", "GitHub", "Professional", {
     paper: "#ffffff", surface: "#ffffff", surface2: "#f6f8fa",
@@ -160,7 +160,7 @@ export const THEMES: Theme[] = [
     line: "#1d4373", line2: "#2a558c",
     accent: "#5ad1ff", accentSoft: "#0e2c4d",
     add: "#5ee0a0", addSoft: "#103a2c", del: "#ff8a8a", delSoft: "#3a1d22",
-    warn: "#ffd166", warnSoft: "#33301a",
+    warn: "#ffd166", warnSoft: "#33301a", onAccent: "#000",
   }),
   makeTheme("newsprint", "Newsprint", "Editorial", {
     paper: "#f7f5ef", surface: "#ffffff", surface2: "#ece9e1",
@@ -185,7 +185,7 @@ export const THEMES: Theme[] = [
     line: "#3a2470", line2: "#4d2f8f",
     accent: "#ff5fd2", accentSoft: "#2e1450",
     add: "#36f9c5", addSoft: "#0e3a32", del: "#ff5f6d", delSoft: "#3a1622",
-    warn: "#ffd23f", warnSoft: "#332a10",
+    warn: "#ffd23f", warnSoft: "#332a10", onAccent: "#000",
   }),
 ];
 

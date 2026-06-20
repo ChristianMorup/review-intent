@@ -208,7 +208,7 @@ whether the intent is genuine reasoning or post-hoc rationalization is the whole
 ballgame. `review-intent` ships a Claude Code skill that teaches the agent to
 author the artifact **honestly** (real rejected alternatives, stated
 assumptions, incidental changes marked as incidental) when it finishes a change
-set, then offer to render it.
+set, then render it.
 
 ```sh
 review-intent skill install            # ~/.claude/skills/review-intent-authoring (all repos)
@@ -217,9 +217,10 @@ review-intent skill uninstall          # remove user-scoped skill
 review-intent skill uninstall --local  # remove repo-scoped skill
 ```
 
-The skill never auto-launches anything — it teaches the agent to write the
-artifact and then *ask* before opening the review. Add `--force` to overwrite or
-remove a hand-edited skill file. User and `--local` scopes are independent.
+Once the artifact is written the skill tells the agent to *run* `review-intent`
+and open the review — not to ask first, since invoking the skill already means a
+review is wanted. Add `--force` to overwrite or remove a hand-edited skill file.
+User and `--local` scopes are independent.
 
 The honesty contract is the point: a fluent rationalization is worse than
 nothing because it lowers the reviewer's guard while adding no signal. The skill

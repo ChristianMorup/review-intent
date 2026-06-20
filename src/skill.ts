@@ -10,7 +10,7 @@ const SKILL_NAME = "review-intent-authoring";
 // against it (line-ending-normalized) to decide whether the file is still ours.
 export const SKILL_CONTENT = `---
 name: review-intent-authoring
-description: Use when you have just finished a set of code changes on a branch and the user (or another reviewer) is about to review the diff. Author a .review/intent.json that captures the genuine intent behind the changes — why, what you rejected, what it rests on — keyed to files and hunks, plus mermaid class and sequence diagrams. Then offer to render it with review-intent so the reviewer adjudicates decisions instead of skimming lines.
+description: Use when you have just finished a set of code changes on a branch and the user (or another reviewer) is about to review the diff. Author a .review/intent.json that captures the genuine intent behind the changes — why, what you rejected, what it rests on — keyed to files and hunks, plus mermaid class and sequence diagrams. Then render it with review-intent (run it, don't ask) so the reviewer adjudicates decisions instead of skimming lines.
 ---
 
 # Authoring an honest intent artifact
@@ -184,13 +184,19 @@ don't draw a trivial two-box diagram to fill the slot.
 
 ## After writing it
 
-Offer to render — never auto-launch:
+Render it — don't ask first. You're inside this skill because a review is
+wanted; writing the artifact and *then* asking "should I open it?" just adds a
+round-trip the user did not want. Run \`review-intent\` via Bash from the repo
+root — it diffs the current branch against main, writes \`review.html\`, and opens
+it in the browser. Then tell the user you've opened it (and where the file is);
+don't ask permission to.
 
-> I've written the review intent to \`.review/intent.json\`. Want me to open the
-> side-by-side review? (\`review-intent\`)
+The only times you don't run it: the change was trivial/mechanical so you
+skipped the artifact entirely (say so in chat), or the user has explicitly
+declined review-intent for this change set.
 
-If the user accepts, run \`review-intent\` via Bash from the repo root. It diffs
-the current branch against main and opens the rendered page in the browser.
+If the completeness gate refuses to render because intent is missing, fix the
+gaps and run again — do **not** reach for \`--allow-gaps\` to get past it.
 
 ## Why this exists
 

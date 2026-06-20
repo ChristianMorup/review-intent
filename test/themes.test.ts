@@ -16,9 +16,13 @@ describe("themes", () => {
     for (const id of ids) expect(id).toMatch(/^[a-z0-9-]+$/);
   });
 
-  it("includes the named themes", () => {
+  it("ships the full catalog", () => {
     const ids = THEMES.map((t) => t.id);
-    expect(ids).toEqual(expect.arrayContaining(["dark", "hacker"]));
+    expect(ids).toEqual([
+      "dark", "hacker", "solarized-light", "solarized-dark", "nord",
+      "gruvbox", "catppuccin", "github", "high-contrast", "blueprint",
+      "newsprint", "sepia", "synthwave",
+    ]);
   });
 
   it("themeCss emits one selector per theme and no :root", () => {

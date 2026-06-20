@@ -1420,7 +1420,7 @@ a { color: var(--accent); text-underline-offset: 2px; }
 .lightbox-close:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── Sticky utility bar ── */
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 16px;
@@ -1480,7 +1480,6 @@ html { scroll-behavior: smooth; }
 .band { border: 0; }
 .band-head { cursor: pointer; list-style: none; }
 .band-head::-webkit-details-marker { display: none; }
-.band-head h2 { display: inline-flex; align-items: baseline; gap: 12px; }
 .band-head h2::before {
   content: "›"; font-size: 15px; color: var(--muted); transition: transform .15s; display: inline-block;
 }

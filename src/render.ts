@@ -2013,9 +2013,9 @@ function commentScript(model: ReviewModel): string {
         var code = f.querySelector(".path");
         var path = code ? code.textContent : f.id;
         var section = [];
-        var fc = f.querySelector('.cbox[data-ckind="file"] .cinput');
+        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput');
         if (fc && clean(fc.value)) { section.push("- " + clean(fc.value).replace(/\\n/g, "\\n  ")); count++; }
-        f.querySelectorAll('.cbox[data-ckind="hunk"] .cinput').forEach(function (hc) {
+        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput').forEach(function (hc) {
           if (clean(hc.value)) {
             var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
             section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));

@@ -333,20 +333,21 @@ const cta = [
 
 // APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
 const clickT2 = t["approve-click"] ?? 9.0;
+// A real UI click is a tiny broadband NOISE impulse with no tone — two ultra-fast
+// transients (the press "tk" + a quieter release "k") in the 1.5–7 kHz click band.
 const click = [
-  // low "thock" body (weight, ~130ms)
-  `sine=frequency=185:duration=0.13[ck_lo]`,
-  `[ck_lo]volume='if(lt(t,0.002),1.0,exp(-30*(t-0.002)))':eval=frame[ck_lo_e]`,
-  // mid snap — the audible click pitch, in the phone-speaker band
-  `sine=frequency=1150:duration=0.09[ck_md]`,
-  `[ck_md]volume='if(lt(t,0.001),1.0,exp(-60*(t-0.001)))':eval=frame[ck_md_e]`,
-  // high noise transient — natural click texture
-  `anoisesrc=d=0.07:c=white:a=0.9:r=44100[ck_nz0]`,
-  `[ck_nz0]highpass=f=2200[ck_nz1]`,
-  `[ck_nz1]volume='if(lt(t,0.001),1.0,exp(-80*(t-0.001)))':eval=frame[ck_nz_e]`,
-  `[ck_lo_e][ck_md_e][ck_nz_e]amix=inputs=3:normalize=0[ck_mix]`,
-  `[ck_mix]volume=1.1[ck_v]`,
-  `[ck_v]${adelay(clickT2)}[click_hit]`,
+  `anoisesrc=d=0.05:c=white:a=1.0:r=44100[ck_n0]`,
+  `[ck_n0]highpass=f=1500,lowpass=f=7000[ck_bp]`,
+  // press transient: instant attack, ~10ms decay
+  `[ck_bp]volume='if(lt(t,0.0003),1.0,exp(-220*(t-0.0003)))':eval=frame[ck_press]`,
+  `[ck_press]volume=2.4[ck_p]`,
+  // release transient: a second, softer tick ~35ms later (the "clack")
+  `anoisesrc=d=0.05:c=white:a=1.0:r=44100[ck_n1]`,
+  `[ck_n1]highpass=f=1800,lowpass=f=7500[ck_bp2]`,
+  `[ck_bp2]volume='if(lt(t,0.035),0.0,if(lt(t,0.0354),1.0,exp(-260*(t-0.0354))))':eval=frame[ck_rel]`,
+  `[ck_rel]volume=1.4[ck_r]`,
+  `[ck_p][ck_r]amix=inputs=2:normalize=0[ck_mix]`,
+  `[ck_mix]${adelay(clickT2)}[click_hit]`,
 ];
 
 // ── Build aeval filter nodes ──────────────────────────────────────────────────

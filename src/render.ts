@@ -1991,6 +1991,11 @@ function viewedScript(model: ReviewModel): string {
 /** Static enhancement: persist reviewer comments (per-change, like viewed
  *  state), keep the gathered-prompt textarea + summary in sync, and copy. The
  *  prompt is assembled from the live textareas in DOM order (= review order). */
+/** Static enhancement: persist reviewer annotations (comments + questions,
+ *  per-change like viewed state), keep the gathered-prompt textarea + summary in
+ *  sync, and copy. Questions are emitted first — they're the blocking decisions.
+ *  Each kind is bucketed by the textarea's data-akind; within a kind, items are
+ *  grouped by file then hunk in DOM order (= review order). */
 function commentScript(model: ReviewModel): string {
   const KEY = `review-intent:comments:${model.title}@${model.base}`;
   const META = JSON.stringify({ title: model.title, base: model.base }).replace(/<\//g, "<\\/");
@@ -2006,41 +2011,62 @@ function commentScript(model: ReviewModel): string {
     var out = document.querySelector(".fb-output");
     var summary = document.querySelector(".fb-summary");
     function clean(s) { return s.replace(/\\r/g, "").trim(); }
-    function mark(t) { var b = t.closest(".cbox"); if (b) b.classList.toggle("has-comment", !!clean(t.value)); }
+    function indent(s) { return clean(s).replace(/\\n/g, "\\n  "); }
+    function mark(t) {
+      var b = t.closest(".cbox"); if (!b) return;
+      var cls = t.getAttribute("data-akind") === "question" ? "has-question" : "has-comment";
+      b.classList.toggle(cls, !!clean(t.value));
+    }
     function reveal(t) { var b = t.closest(".cbox"); if (b) b.classList.add("open"); }
 
-    function assemble() {
+    // Gather one kind ("comment" | "question") grouped by file -> hunk, plus its
+    // page-level box. Returns { lines: [...], count: n }.
+    function collect(akind, files) {
       var lines = [], count = 0;
-      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
-      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
       files.forEach(function (f) {
         var code = f.querySelector(".path");
         var path = code ? code.textContent : f.id;
         var section = [];
-        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput');
-        if (fc && clean(fc.value)) { section.push("- " + clean(fc.value).replace(/\\n/g, "\\n  ")); count++; }
-        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput').forEach(function (hc) {
+        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput[data-akind="' + akind + '"]');
+        if (fc && clean(fc.value)) { section.push("- " + indent(fc.value)); count++; }
+        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput[data-akind="' + akind + '"]').forEach(function (hc) {
           if (clean(hc.value)) {
             var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
             section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
-            section.push("- " + clean(hc.value).replace(/\\n/g, "\\n  "));
+            section.push("- " + indent(hc.value));
             count++;
           }
         });
         if (section.length) { lines.push("## " + path); lines.push.apply(lines, section); lines.push(""); }
       });
-      var pg = document.querySelector('.cinput[data-cid="__page__"]');
-      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + clean(pg.value).replace(/\\n/g, "\\n  ")); lines.push(""); count++; }
+      var pgCid = akind === "question" ? "q:__page__" : "__page__";
+      var pg = document.querySelector('.cinput[data-cid="' + pgCid + '"]');
+      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
+      return { lines: lines, count: count };
+    }
+
+    function assemble() {
+      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      var q = collect("question", files);
+      var c = collect("comment", files);
       if (out) {
-        if (count === 0) { out.value = ""; }
+        if (q.count === 0 && c.count === 0) { out.value = ""; }
         else {
           var head = 'Review feedback on "' + META.title + '" (' + META.base + "...HEAD).\\n" +
-            "Sign-off: " + done + " / " + files.length + " files reviewed. Address each item below.\\n";
-          out.value = head + "\\n" + lines.join("\\n").replace(/\\n+$/, "") + "\\n";
+            "Sign-off: " + done + " / " + files.length + " files reviewed. " +
+            q.count + " question" + (q.count === 1 ? "" : "s") + ", " +
+            c.count + " comment" + (c.count === 1 ? "" : "s") + " below.\\n";
+          var blocks = [];
+          if (q.count) { blocks.push("# Questions (please answer)"); blocks = blocks.concat(q.lines); }
+          if (c.count) { blocks.push("# Comments"); blocks = blocks.concat(c.lines); }
+          out.value = head + "\\n" + blocks.join("\\n").replace(/\\n+$/, "") + "\\n";
         }
       }
       if (summary) {
-        summary.textContent = done + " / " + files.length + " files reviewed · " + count + " comment" + (count === 1 ? "" : "s");
+        summary.textContent = done + " / " + files.length + " files reviewed · " +
+          q.count + " question" + (q.count === 1 ? "" : "s") + " · " +
+          c.count + " comment" + (c.count === 1 ? "" : "s");
       }
     }
 

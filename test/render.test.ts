@@ -358,6 +358,20 @@ describe("renderHtml", () => {
     expect(html).toContain("Review feedback on");
   });
 
+  it("assembles questions and comments into two labelled sections", () => {
+    expect(html).toContain("# Questions (please answer)");
+    expect(html).toContain("# Comments");
+    expect(html).toContain('data-akind="question"');
+    const qi = html.indexOf("# Questions (please answer)");
+    const ci = html.indexOf("# Comments");
+    expect(qi).toBeGreaterThan(-1);
+    expect(ci).toBeGreaterThan(qi);
+  });
+
+  it("reads back the q-prefixed page question key from the store", () => {
+    expect(html).toContain('"q:__page__"');
+  });
+
   it("renders the guided-tour control and start button", () => {
     expect(html).toContain('id="tour"');
     expect(html).toContain('class="tb-tour"');

@@ -233,11 +233,11 @@ await step("s8", async () => {
     // genuine split-screen, BOTH cards fully inside the frame (no edge clipping):
     // scorecard-crop 982x545 @0.70 => 687x382 centred x=470 (left 127, right 813);
     // risk-ledger 982x1166 @0.70 => 687x816 centred x=1390 (left 1046, right 1733).
-    showShot("assets/scorecard-crop.png", { fromScale: 0.74, fromTx: -490, fromTy: 30,
-      scale: 0.70, tx: -490, ty: 30, duration: 900 });
+    showShot("assets/scorecard-crop.png", { fromScale: 0.60, fromTx: -480, fromTy: 160,
+      scale: 0.56, tx: -480, ty: 160, duration: 900 });
     showShot("risk-ledger.png", {
-      fromScale: 0.66, fromTx: 1300, fromTy: 30,
-      scale: 0.70, tx: 430, ty: 30, duration: 1000
+      fromScale: 0.52, fromTx: 1300, fromTy: 160,
+      scale: 0.56, tx: 480, ty: 160, duration: 1000
     });
   });
   await wait(1100);

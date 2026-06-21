@@ -326,6 +326,21 @@ describe("renderHtml", () => {
     expect(html).toContain('<textarea class="cinput" data-cid="file-0" data-ref="src/a.ts"');
   });
 
+  it("emits a hunk question box with a q-prefixed id and precise line ref", () => {
+    expect(html).toContain('data-akind="question"');
+    expect(html).toContain('data-cid="q:file-0-hunk-0"');
+    expect(html).toContain('<button class="cbtn cbtn-q"');
+  });
+
+  it("emits a file-level question box keyed on the q-prefixed file slug", () => {
+    expect(html).toContain('<textarea class="cinput" data-cid="q:file-0" data-ref="src/a.ts"');
+  });
+
+  it("tags every comment textarea with data-akind=comment", () => {
+    expect(html).toContain('data-cid="file-0-hunk-0" data-ref="src/a.ts:1-3"');
+    expect(html).toMatch(/data-cid="file-0"[^>]*data-akind="comment"/);
+  });
+
   it("renders the feedback panel with page comment, output, and copy button", () => {
     expect(html).toContain('class="review-feedback"');
     expect(html).toContain('data-cid="__page__"');

@@ -1148,7 +1148,7 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
       : `<div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>`
   }
-  ${commentBox(r.slug, file.path, "file")}
+  ${annotateBox(r.slug, file.path, "file")}
   ${file.hunks.map((h, j) => renderHunk(h, r.index, j, file.path)).join("\n")}
   ${
     file.unmatchedIntents.length
@@ -1162,18 +1162,24 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
-/** A reviewer comment affordance: a 💬 toggle + a hidden textarea the comment
- *  script persists. Pure markup; the textarea carries the data the assembled
- *  prompt is built from. `cid` is the localStorage key, `ref` the human-readable
- *  location shown in the prompt. */
-function commentBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
+/** A reviewer annotation affordance: a 💬 Comment box and a ❓ Ask box, side by
+ *  side, each a hidden textarea the script persists. Pure markup; the textareas
+ *  carry the data the assembled prompt is built from. `cid` is the comment's
+ *  localStorage key (the question reuses it with a `q:` prefix); `ref` is the
+ *  human-readable location shown in the prompt. `data-akind` lets the script tell
+ *  comments from questions; `data-ckind` (on the group) tells hunk from file. */
+function annotateBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
   const hdrAttr = hdr ? ` data-hdr="${esc(hdr)}"` : "";
-  const ph = kind === "hunk"
-    ? "Note to the agent about this hunk…"
-    : "Note to the agent about this file…";
-  return `<div class="cbox" data-ckind="${kind}">
-    <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬</button>
-    <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} placeholder="${ph}"></textarea>
+  const where = kind === "hunk" ? "this hunk" : "this file";
+  return `<div class="cbox-group" data-ckind="${kind}">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="comment" placeholder="Note to the agent about ${where}…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="question" placeholder="Question for the agent about ${where}…"></textarea>
+    </div>
   </div>`;
 }
 
@@ -1199,7 +1205,7 @@ function renderHunk(hunk: AnnotatedHunk, fileIndex: number, hunkIndex: number, p
         ? hunk.intents.map((i) => `<div class="note">${whatWhy(i.what, i.why)}</div>`).join("")
         : `<div class="note missing">⚠ No intent for this hunk.</div>`
     }
-    ${commentBox(cid, ref, "hunk", hunk.header)}
+    ${annotateBox(cid, ref, "hunk", hunk.header)}
   </aside>
 </div>`;
 }

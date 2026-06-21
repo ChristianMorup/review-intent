@@ -331,6 +331,20 @@ const cta = [
   `[cta_shaped]${adelay(ctaT2)}[cta_hit]`,
 ];
 
+// APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
+const clickT2 = t["approve-click"] ?? 9.0;
+const click = [
+  `sine=frequency=900:duration=0.06[ck0]`,
+  `sine=frequency=1700:duration=0.06[ck1]`,
+  `sine=frequency=2600:duration=0.06[ck2]`,
+  `sine=frequency=5200:duration=0.06[ck3]`,
+  `sine=frequency=7400:duration=0.06[ck4]`,
+  `[ck0][ck1][ck2][ck3][ck4]amix=inputs=5:normalize=0[ck_mix]`,
+  `[ck_mix]volume='if(lt(t,0.0008),1.0,exp(-85*(t-0.0008)))':eval=frame[ck_env]`,
+  `[ck_env]volume=0.50[ck_v]`,
+  `[ck_v]${adelay(clickT2)}[click_hit]`,
+];
+
 // ── Build aeval filter nodes ──────────────────────────────────────────────────
 // aeval filter: takes a continuous stereo stream and applies per-sample expressions.
 // We pipe the anullsrc through aeval for each layer, then amix all.
@@ -357,8 +371,8 @@ for (const { label, exprL, exprR } of aLayers) {
 }
 
 // One-shot nodes
-filterParts.push(...stamp, ...glitch, ...cta);
-mixLabels.push("[stamp_hit]", "[glitch_hit]", "[cta_hit]");
+filterParts.push(...stamp, ...glitch, ...cta, ...click);
+mixLabels.push("[stamp_hit]", "[glitch_hit]", "[cta_hit]", "[click_hit]");
 
 const nMix = mixLabels.length;
 filterParts.push(

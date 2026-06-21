@@ -1988,9 +1988,6 @@ function viewedScript(model: ReviewModel): string {
 </script>`;
 }
 
-/** Static enhancement: persist reviewer comments (per-change, like viewed
- *  state), keep the gathered-prompt textarea + summary in sync, and copy. The
- *  prompt is assembled from the live textareas in DOM order (= review order). */
 /** Static enhancement: persist reviewer annotations (comments + questions,
  *  per-change like viewed state), keep the gathered-prompt textarea + summary in
  *  sync, and copy. Questions are emitted first — they're the blocking decisions.

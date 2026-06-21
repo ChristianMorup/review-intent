@@ -368,8 +368,10 @@ describe("renderHtml", () => {
     expect(ci).toBeGreaterThan(qi);
   });
 
-  it("reads back the q-prefixed page question key from the store", () => {
-    expect(html).toContain('"q:__page__"');
+  it("the assembly script selects the page question key q:__page__", () => {
+    // assert the collect() ternary that picks the page-level key per kind,
+    // so this proves the script reads q:__page__ (not just the textarea markup)
+    expect(html).toContain('"q:__page__" : "__page__"');
   });
 
   it("renders the guided-tour control and start button", () => {

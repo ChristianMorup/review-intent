@@ -334,14 +334,18 @@ const cta = [
 // APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
 const clickT2 = t["approve-click"] ?? 9.0;
 const click = [
-  `sine=frequency=900:duration=0.06[ck0]`,
-  `sine=frequency=1700:duration=0.06[ck1]`,
-  `sine=frequency=2600:duration=0.06[ck2]`,
-  `sine=frequency=5200:duration=0.06[ck3]`,
-  `sine=frequency=7400:duration=0.06[ck4]`,
-  `[ck0][ck1][ck2][ck3][ck4]amix=inputs=5:normalize=0[ck_mix]`,
-  `[ck_mix]volume='if(lt(t,0.0008),1.0,exp(-85*(t-0.0008)))':eval=frame[ck_env]`,
-  `[ck_env]volume=0.50[ck_v]`,
+  // low "thock" body (weight, ~130ms)
+  `sine=frequency=185:duration=0.13[ck_lo]`,
+  `[ck_lo]volume='if(lt(t,0.002),1.0,exp(-30*(t-0.002)))':eval=frame[ck_lo_e]`,
+  // mid snap — the audible click pitch, in the phone-speaker band
+  `sine=frequency=1150:duration=0.09[ck_md]`,
+  `[ck_md]volume='if(lt(t,0.001),1.0,exp(-60*(t-0.001)))':eval=frame[ck_md_e]`,
+  // high noise transient — natural click texture
+  `anoisesrc=d=0.07:c=white:a=0.9:r=44100[ck_nz0]`,
+  `[ck_nz0]highpass=f=2200[ck_nz1]`,
+  `[ck_nz1]volume='if(lt(t,0.001),1.0,exp(-80*(t-0.001)))':eval=frame[ck_nz_e]`,
+  `[ck_lo_e][ck_md_e][ck_nz_e]amix=inputs=3:normalize=0[ck_mix]`,
+  `[ck_mix]volume=1.1[ck_v]`,
   `[ck_v]${adelay(clickT2)}[click_hit]`,
 ];
 

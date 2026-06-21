@@ -105,7 +105,7 @@ await step("s2", async () => {
   });
   // cursor creeps toward the approve button
   await wait(500);
-  await ev(() => moveCursor(1560, 880, 2400));
+  await ev(() => moveCursor(1548, 838, 2400)); // land ON the Approve button (centre ~1548,840)
 });
 await wait(2300);
 
@@ -116,7 +116,7 @@ mark("s3");
 await step("s3", async () => {
   await ev(() => { hideText(); showDiffBg(false); });
   await wait(180);
-  await ev(() => { moveCursor(1620, 900, 260); });
+  await ev(() => { moveCursor(1548, 834, 220); }); // tiny settle, stays ON the button
   await wait(260);
   mark("approve-click");
   await ev(() => { pressApprove(); });

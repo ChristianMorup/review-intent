@@ -345,7 +345,10 @@ const cta = [
 ];
 
 // APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
-const clickT2 = t["approve-click"] ?? 9.0;
+// Lead the click 0.4s ahead of the (offset-corrected) press mark — it reads better
+// landing as the cursor meets the button rather than on the depress.
+const CLICK_LEAD = 0.53;
+const clickT2 = Math.max(0, (t["approve-click"] ?? 9.0) - CLICK_LEAD);
 // Real recorded UI click — CC0 (public domain), muxed as input [1]. The source has
 // lead-in before the transient, so trim to the loud click region (~0.28–0.50s).
 const click = [

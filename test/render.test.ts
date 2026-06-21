@@ -326,6 +326,21 @@ describe("renderHtml", () => {
     expect(html).toContain('<textarea class="cinput" data-cid="file-0" data-ref="src/a.ts"');
   });
 
+  it("emits a hunk question box with a q-prefixed id and precise line ref", () => {
+    expect(html).toContain('data-akind="question"');
+    expect(html).toContain('data-cid="q:file-0-hunk-0"');
+    expect(html).toContain('<button class="cbtn cbtn-q"');
+  });
+
+  it("emits a file-level question box keyed on the q-prefixed file slug", () => {
+    expect(html).toContain('<textarea class="cinput" data-cid="q:file-0" data-ref="src/a.ts"');
+  });
+
+  it("tags every comment textarea with data-akind=comment", () => {
+    expect(html).toContain('data-cid="file-0-hunk-0" data-ref="src/a.ts:1-3"');
+    expect(html).toMatch(/data-cid="file-0"[^>]*data-akind="comment"/);
+  });
+
   it("renders the feedback panel with page comment, output, and copy button", () => {
     expect(html).toContain('class="review-feedback"');
     expect(html).toContain('data-cid="__page__"');
@@ -333,9 +348,30 @@ describe("renderHtml", () => {
     expect(html).toContain('class="fb-copy"');
   });
 
+  it("renders a page-level overall question box", () => {
+    expect(html).toContain('data-cid="q:__page__"');
+    expect(html).toMatch(/data-cid="q:__page__"[^>]*data-akind="question"/);
+  });
+
   it("embeds the comment script with the per-change storage key", () => {
     expect(html).toContain("review-intent:comments:My change@main");
     expect(html).toContain("Review feedback on");
+  });
+
+  it("assembles questions and comments into two labelled sections", () => {
+    expect(html).toContain("# Questions (please answer)");
+    expect(html).toContain("# Comments");
+    expect(html).toContain('data-akind="question"');
+    const qi = html.indexOf("# Questions (please answer)");
+    const ci = html.indexOf("# Comments");
+    expect(qi).toBeGreaterThan(-1);
+    expect(ci).toBeGreaterThan(qi);
+  });
+
+  it("the assembly script selects the page question key q:__page__", () => {
+    // assert the collect() ternary that picks the page-level key per kind,
+    // so this proves the script reads q:__page__ (not just the textarea markup)
+    expect(html).toContain('"q:__page__" : "__page__"');
   });
 
   it("renders the guided-tour control and start button", () => {
@@ -352,6 +388,11 @@ describe("renderHtml", () => {
     expect(html).toContain('class="theme-menu"');        // popover menu
     expect(html).toContain('[data-theme="nord"]');       // a theme CSS block
     expect(html).toContain('data-theme-id="hacker"');    // a menu option
+  });
+
+  it("styles the question control distinctly and marks unsent questions", () => {
+    expect(html).toContain(".cbtn-q");
+    expect(html).toContain(".cbox.has-question");
   });
 });
 

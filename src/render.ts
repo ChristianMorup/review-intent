@@ -1148,7 +1148,7 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
       : `<div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>`
   }
-  ${commentBox(r.slug, file.path, "file")}
+  ${annotateBox(r.slug, file.path, "file")}
   ${file.hunks.map((h, j) => renderHunk(h, r.index, j, file.path)).join("\n")}
   ${
     file.unmatchedIntents.length
@@ -1162,18 +1162,24 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
-/** A reviewer comment affordance: a 💬 toggle + a hidden textarea the comment
- *  script persists. Pure markup; the textarea carries the data the assembled
- *  prompt is built from. `cid` is the localStorage key, `ref` the human-readable
- *  location shown in the prompt. */
-function commentBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
+/** A reviewer annotation affordance: a 💬 Comment box and a ❓ Ask box, side by
+ *  side, each a hidden textarea the script persists. Pure markup; the textareas
+ *  carry the data the assembled prompt is built from. `cid` is the comment's
+ *  localStorage key (the question reuses it with a `q:` prefix); `ref` is the
+ *  human-readable location shown in the prompt. `data-akind` lets the script tell
+ *  comments from questions; `data-ckind` (on the group) tells hunk from file. */
+function annotateBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
   const hdrAttr = hdr ? ` data-hdr="${esc(hdr)}"` : "";
-  const ph = kind === "hunk"
-    ? "Note to the agent about this hunk…"
-    : "Note to the agent about this file…";
-  return `<div class="cbox" data-ckind="${kind}">
-    <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬</button>
-    <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} placeholder="${ph}"></textarea>
+  const where = kind === "hunk" ? "this hunk" : "this file";
+  return `<div class="cbox-group" data-ckind="${kind}">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="comment" placeholder="Note to the agent about ${where}…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="question" placeholder="Question for the agent about ${where}…"></textarea>
+    </div>
   </div>`;
 }
 
@@ -1199,7 +1205,7 @@ function renderHunk(hunk: AnnotatedHunk, fileIndex: number, hunkIndex: number, p
         ? hunk.intents.map((i) => `<div class="note">${whatWhy(i.what, i.why)}</div>`).join("")
         : `<div class="note missing">⚠ No intent for this hunk.</div>`
     }
-    ${commentBox(cid, ref, "hunk", hunk.header)}
+    ${annotateBox(cid, ref, "hunk", hunk.header)}
   </aside>
 </div>`;
 }
@@ -1234,10 +1240,14 @@ function renderFeedbackPanel(model: ReviewModel): string {
   if (model.files.length === 0) return "";
   return `<section class="review-feedback" id="feedback">
   <h2>Review feedback</h2>
-  <p class="rf-hint">Comment on any hunk or file with the 💬 buttons, add overall notes here, then copy the assembled prompt back to the agent.</p>
+  <p class="rf-hint">Comment (💬) or ask a question (❓) on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
   <label class="fb-general">
     <span class="fb-general-lbl">Overall comment</span>
-    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" placeholder="Overall feedback on the change set…"></textarea>
+    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" data-akind="comment" placeholder="Overall feedback on the change set…"></textarea>
+  </label>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall question</span>
+    <textarea class="cinput fb-general-input" data-cid="q:__page__" data-ref="__general__" data-akind="question" placeholder="An overall question for the agent…"></textarea>
   </label>
   <div class="fb-summary"></div>
   <h3 class="fb-out-head">Prompt for the agent</h3>
@@ -1829,16 +1839,22 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Review comments ── */
-.cbox { margin-top: 10px; }
-.hunk-notes .cbox { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+/* ── Review annotations (comments + questions) ── */
+.cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hunk-notes .cbox-group { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+.cbox { display: inline-flex; }
+.cbox.open { flex-basis: 100%; flex-direction: column; }
 .cbtn {
-  font-size: 12px; line-height: 1; cursor: pointer; color: var(--ink-soft);
-  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px;
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 11px;
 }
-.cbtn:hover { border-color: var(--accent); }
-.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); }
-.cbox.has-comment .cbtn::after { content: " •"; color: var(--accent); }
+.cbtn:hover { border-color: var(--accent); color: var(--accent); }
+.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cbox.has-comment .cbtn::after { content: " •"; }
+.cbtn-q { color: var(--add); }
+.cbtn-q:hover { border-color: var(--add); color: var(--add); }
+.cbox.has-question .cbtn-q { border-color: var(--add); background: var(--add-soft, var(--accent-soft)); color: var(--add); }
+.cbox.has-question .cbtn-q::after { content: " •"; }
 .cinput {
   display: none; width: 100%; margin-top: 8px; resize: vertical; min-height: 54px;
   font: 13px/1.5 var(--sans); color: var(--ink);
@@ -1978,9 +1994,11 @@ function viewedScript(model: ReviewModel): string {
 </script>`;
 }
 
-/** Static enhancement: persist reviewer comments (per-change, like viewed
- *  state), keep the gathered-prompt textarea + summary in sync, and copy. The
- *  prompt is assembled from the live textareas in DOM order (= review order). */
+/** Static enhancement: persist reviewer annotations (comments + questions,
+ *  per-change like viewed state), keep the gathered-prompt textarea + summary in
+ *  sync, and copy. Questions are emitted first — they're the blocking decisions.
+ *  Each kind is bucketed by the textarea's data-akind; within a kind, items are
+ *  grouped by file then hunk in DOM order (= review order). */
 function commentScript(model: ReviewModel): string {
   const KEY = `review-intent:comments:${model.title}@${model.base}`;
   const META = JSON.stringify({ title: model.title, base: model.base }).replace(/<\//g, "<\\/");
@@ -1996,41 +2014,62 @@ function commentScript(model: ReviewModel): string {
     var out = document.querySelector(".fb-output");
     var summary = document.querySelector(".fb-summary");
     function clean(s) { return s.replace(/\\r/g, "").trim(); }
-    function mark(t) { var b = t.closest(".cbox"); if (b) b.classList.toggle("has-comment", !!clean(t.value)); }
+    function indent(s) { return clean(s).replace(/\\n/g, "\\n  "); }
+    function mark(t) {
+      var b = t.closest(".cbox"); if (!b) return;
+      var cls = t.getAttribute("data-akind") === "question" ? "has-question" : "has-comment";
+      b.classList.toggle(cls, !!clean(t.value));
+    }
     function reveal(t) { var b = t.closest(".cbox"); if (b) b.classList.add("open"); }
 
-    function assemble() {
+    // Gather one kind ("comment" | "question") grouped by file -> hunk, plus its
+    // page-level box. Returns { lines: [...], count: n }.
+    function collect(akind, files) {
       var lines = [], count = 0;
-      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
-      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
       files.forEach(function (f) {
         var code = f.querySelector(".path");
         var path = code ? code.textContent : f.id;
         var section = [];
-        var fc = f.querySelector('.cbox[data-ckind="file"] .cinput');
-        if (fc && clean(fc.value)) { section.push("- " + clean(fc.value).replace(/\\n/g, "\\n  ")); count++; }
-        f.querySelectorAll('.cbox[data-ckind="hunk"] .cinput').forEach(function (hc) {
+        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput[data-akind="' + akind + '"]');
+        if (fc && clean(fc.value)) { section.push("- " + indent(fc.value)); count++; }
+        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput[data-akind="' + akind + '"]').forEach(function (hc) {
           if (clean(hc.value)) {
             var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
             section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
-            section.push("- " + clean(hc.value).replace(/\\n/g, "\\n  "));
+            section.push("- " + indent(hc.value));
             count++;
           }
         });
         if (section.length) { lines.push("## " + path); lines.push.apply(lines, section); lines.push(""); }
       });
-      var pg = document.querySelector('.cinput[data-cid="__page__"]');
-      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + clean(pg.value).replace(/\\n/g, "\\n  ")); lines.push(""); count++; }
+      var pgCid = akind === "question" ? "q:__page__" : "__page__";
+      var pg = document.querySelector('.cinput[data-cid="' + pgCid + '"]');
+      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
+      return { lines: lines, count: count };
+    }
+
+    function assemble() {
+      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      var q = collect("question", files);
+      var c = collect("comment", files);
       if (out) {
-        if (count === 0) { out.value = ""; }
+        if (q.count === 0 && c.count === 0) { out.value = ""; }
         else {
           var head = 'Review feedback on "' + META.title + '" (' + META.base + "...HEAD).\\n" +
-            "Sign-off: " + done + " / " + files.length + " files reviewed. Address each item below.\\n";
-          out.value = head + "\\n" + lines.join("\\n").replace(/\\n+$/, "") + "\\n";
+            "Sign-off: " + done + " / " + files.length + " files reviewed. " +
+            q.count + " question" + (q.count === 1 ? "" : "s") + ", " +
+            c.count + " comment" + (c.count === 1 ? "" : "s") + " below.\\n";
+          var blocks = [];
+          if (q.count) { blocks.push("# Questions (please answer)"); blocks = blocks.concat(q.lines); }
+          if (c.count) { blocks.push("# Comments"); blocks = blocks.concat(c.lines); }
+          out.value = head + "\\n" + blocks.join("\\n").replace(/\\n+$/, "") + "\\n";
         }
       }
       if (summary) {
-        summary.textContent = done + " / " + files.length + " files reviewed · " + count + " comment" + (count === 1 ? "" : "s");
+        summary.textContent = done + " / " + files.length + " files reviewed · " +
+          q.count + " question" + (q.count === 1 ? "" : "s") + " · " +
+          c.count + " comment" + (c.count === 1 ? "" : "s");
       }
     }
 

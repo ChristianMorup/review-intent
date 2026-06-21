@@ -81,3 +81,8 @@ node soundtrack.mjs     # writes demo/out/review-intent-trailer.mp4 (with audio)
 `trailer-storyboard.json` the panel-designed storyboard; `soundtrack.mjs` the
 ffmpeg-synthesized audio (drone bed + impacts/risers/ticks, peaks limited to -1 dBFS).
 The trailer is silent without step 2.
+
+**Credits / licensing:** the music is synthesized in `soundtrack.mjs` (original, no
+license). The Approve click is `assets/click-cc0.ogg` — "Computer mouse single click"
+from [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Computer_mouse_single_click.ogg),
+licensed **CC0** (public domain): no attribution or royalties required.

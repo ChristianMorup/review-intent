@@ -27,6 +27,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outDir = resolve(here, "../out");
 mkdirSync(outDir, { recursive: true });
 
+// Royalty-free click: "Computer mouse single click" from Wikimedia Commons,
+// licensed CC0 (public domain — no attribution, no royalties).
+// Source: https://commons.wikimedia.org/wiki/File:Computer_mouse_single_click.ogg
+const clickWav = resolve(here, "assets/click-cc0.ogg");
+
 // ── Load marks ───────────────────────────────────────────────────────────────
 const marksPath = resolve(outDir, "promo-marks.json");
 const marksData = JSON.parse(readFileSync(marksPath, "utf8"));
@@ -341,11 +346,10 @@ const cta = [
 
 // APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
 const clickT2 = t["approve-click"] ?? 9.0;
-// Real recorded UI click — Windows "Navigation Start" (64ms). Muxed as input [1]
-// so it's an actual click, not a synth approximation. NOTE: placeholder asset —
-// Microsoft IP; swap for a CC0/royalty-free click before any public release.
+// Real recorded UI click — CC0 (public domain), muxed as input [1]. The source has
+// lead-in before the transient, so trim to the loud click region (~0.28–0.50s).
 const click = [
-  `[1:a]atrim=0:0.30,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=32,${adelay(clickT2)}[click_hit]`,
+  `[1:a]atrim=0.28:0.50,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=1.0,${adelay(clickT2)}[click_hit]`,
 ];
 
 // ── Build aeval filter nodes ──────────────────────────────────────────────────
@@ -403,7 +407,7 @@ const audioPath = resolve(outDir, "review-intent-audio.wav");
 // Use -/filter_complex (newer syntax) to pass filter from file
 ffmpeg([
   "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo:d=${f4(aDur+1)}`,
-  "-i", "C:/Windows/Media/Windows Navigation Start.wav",   // input [1] → the real click one-shot
+  "-i", clickWav,   // input [1] → the real CC0 click one-shot
   "-/filter_complex", filterPath,
   "-map", "[limited]",
   "-c:a", "pcm_s16le", "-ar", "44100",

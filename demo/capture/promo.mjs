@@ -86,8 +86,8 @@ await step("s2", async () => {
   await wait(420);
   await ev(() => {
     showTitle(
-      '<div class="big">You have <span class="accent">90 seconds</span></div>' +
-      '<div class="big line2">to approve it.</div>'
+      '<div class="big">Now you\'re</div>' +
+      '<div class="big line2">the <span class="accent">bottleneck</span>.</div>'
     );
     showApprove();
     showCursor(940, 540);
@@ -110,7 +110,6 @@ await step("s3", async () => {
   await wait(160);
   await ev(() => {
     hideApprove(); hideCursor();
-    showTitle('<div class="huge accent">LGTM</div>');
   });
   await wait(120);
   await ev(() => { showStamp(); shake(); });

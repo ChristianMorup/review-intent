@@ -82,11 +82,12 @@ first — so your attention lands where it matters instead of top-to-bottom.
   <img src="docs/media/guided-tour.png" alt="Guided review tour" width="100%">
 </p>
 
-### Comment straight back to the agent
+### Comment and question, straight back to the agent
 
-Leave notes on any hunk or file. They assemble into a single copy-paste prompt
-addressed to the agent that made the change — close the review loop without ever
-leaving the page.
+Leave a **comment** (💬) or raise a **question** (❓) on any hunk or file. Both
+assemble into a single copy-paste prompt addressed to the agent that made the
+change — questions listed first, since they're the decisions the agent must
+resolve — so you close the review loop without ever leaving the page.
 
 <p align="center">
   <img src="docs/media/review-comment.png" alt="Review comments assembled into an agent prompt" width="100%">

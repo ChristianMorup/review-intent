@@ -348,6 +348,11 @@ describe("renderHtml", () => {
     expect(html).toContain('class="fb-copy"');
   });
 
+  it("renders a page-level overall question box", () => {
+    expect(html).toContain('data-cid="q:__page__"');
+    expect(html).toMatch(/data-cid="q:__page__"[^>]*data-akind="question"/);
+  });
+
   it("embeds the comment script with the per-change storage key", () => {
     expect(html).toContain("review-intent:comments:My change@main");
     expect(html).toContain("Review feedback on");

@@ -1240,10 +1240,14 @@ function renderFeedbackPanel(model: ReviewModel): string {
   if (model.files.length === 0) return "";
   return `<section class="review-feedback" id="feedback">
   <h2>Review feedback</h2>
-  <p class="rf-hint">Comment on any hunk or file with the 💬 buttons, add overall notes here, then copy the assembled prompt back to the agent.</p>
+  <p class="rf-hint">Comment (💬) or ask a question (❓) on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
   <label class="fb-general">
     <span class="fb-general-lbl">Overall comment</span>
-    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" placeholder="Overall feedback on the change set…"></textarea>
+    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" data-akind="comment" placeholder="Overall feedback on the change set…"></textarea>
+  </label>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall question</span>
+    <textarea class="cinput fb-general-input" data-cid="q:__page__" data-ref="__general__" data-akind="question" placeholder="An overall question for the agent…"></textarea>
   </label>
   <div class="fb-summary"></div>
   <h3 class="fb-out-head">Prompt for the agent</h3>

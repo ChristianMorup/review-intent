@@ -62,3 +62,22 @@ ffmpeg -y -f concat -safe 0 -i demo/out/list.txt -c copy demo/out/review-intent-
 ```
 
 The produced `.mp4` / `.webm` files live under `demo/out/` which is gitignored — they are build outputs, not committed.
+
+## Promotional trailer (with sound)
+
+A separate, designed launch trailer (kinetic captions + live tool footage composited
+in one Playwright take, plus a procedural ffmpeg soundtrack). Reproducible build:
+
+```sh
+# 1. Record the 1920x1080 stage; writes the webm AND demo/out/promo-marks.json
+#    (real beat timestamps captured during the same run, so audio can't drift)
+node promo.mjs
+
+# 2. Synthesize the synced soundtrack, transcode with fades, and mux a/v
+node soundtrack.mjs     # writes demo/out/review-intent-trailer.mp4 (with audio)
+```
+
+`promo.html` is the motion-graphics stage; `promo.mjs` the Playwright director;
+`trailer-storyboard.json` the panel-designed storyboard; `soundtrack.mjs` the
+ffmpeg-synthesized audio (drone bed + impacts/risers/ticks, peaks limited to -1 dBFS).
+The trailer is silent without step 2.

@@ -1,7 +1,7 @@
 import { chromium } from "playwright";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const stageUrl = pathToFileURL(resolve(here, "promo.html")).href;
@@ -17,6 +17,15 @@ const context = await browser.newContext({
   recordVideo: { dir: outDir, size: VIEWPORT },
 });
 const page = await context.newPage();
+
+// Beat-timestamp instrumentation — T0 ≈ webm t=0 (page created, recording starts)
+const T0 = Date.now();
+const _beats = [];
+function mark(label) {
+  const ms = Date.now() - T0;
+  _beats.push({ label, ms });
+  console.log(`[beat] ${label} @ ${ms}ms`);
+}
 
 const wait = (ms) => page.waitForTimeout(ms);
 const ev = (fn, arg) => page.evaluate(fn, arg);
@@ -65,6 +74,7 @@ await wait(300);
 // ============================================================
 // SCENE 1 — 0:00  "Your agent wrote the code. In seconds." (4s)
 // ============================================================
+mark("s1");
 await step("s1", async () => {
   await ev(() => {
     setBg("radial-gradient(1200px 900px at 50% 40%, rgba(255,255,255,0.04), transparent 60%), #07090d");
@@ -79,6 +89,7 @@ await wait(3700);
 // ============================================================
 // SCENE 2 — 0:04  "You have 90 seconds to approve it." (3.5s)
 // ============================================================
+mark("bottleneck");
 await step("s2", async () => {
   await ev(() => {
     hideText();
@@ -101,19 +112,23 @@ await wait(3000);
 // ============================================================
 // SCENE 3 — 0:07.5  "LGTM" — click, stamp, glitch (3s)
 // ============================================================
+mark("s3");
 await step("s3", async () => {
   await ev(() => { hideText(); showDiffBg(false); });
   await wait(180);
   await ev(() => { moveCursor(1620, 900, 260); });
   await wait(260);
+  mark("approve-click");
   await ev(() => { pressApprove(); });
   await wait(160);
   await ev(() => {
     hideApprove(); hideCursor();
   });
   await wait(120);
+  mark("lgtm-stamp");
   await ev(() => { showStamp(); shake(); });
   await wait(700);
+  mark("glitch");
   await ev(() => { glitch(); });
 });
 await wait(1700);
@@ -121,6 +136,7 @@ await wait(1700);
 // ============================================================
 // SCENE 4 — 0:10.5  "The diff shows WHAT changed..." (3.5s)
 // ============================================================
+mark("problem");
 await step("s4", async () => {
   await ev(() => {
     hideStamp(); hideText();
@@ -139,6 +155,7 @@ await wait(3050);
 // ============================================================
 // SCENE 5 — 0:14  Wordmark "review-intent" (3s)
 // ============================================================
+mark("reveal");
 await step("s5", async () => {
   await ev(() => { hideText(); hideDiffBg(); });
   await wait(420);
@@ -155,6 +172,7 @@ await wait(2900);
 // ============================================================
 // SCENE 6 — 0:17  LIVE tool, hero + vitals, gentle auto-scroll (4s)
 // ============================================================
+mark("tool-in");
 await step("s6", async () => {
   await ev(() => { hideText(); });
   // ensure iframe at top
@@ -183,6 +201,7 @@ await wait(1900);
 // ============================================================
 // SCENE 7 — 0:21  scorecard.png MEASURED, ken-burns to badges (4s)
 // ============================================================
+mark("scorecard");
 await step("s7", async () => {
   await ev(() => { hideTool(); });
   await wait(120);
@@ -206,6 +225,7 @@ await wait(3900);
 // ============================================================
 // SCENE 8 — 0:25  risk-ledger.png CLAIMED, slide-in split feel (4s)
 // ============================================================
+mark("claimed");
 await step("s8", async () => {
   await ev(() => { hideText(); });
   await wait(150);
@@ -233,6 +253,7 @@ await wait(2750);
 // ============================================================
 // SCENE 9 — 0:29  visual-summary.png 5 charts, beat-cut push (3s)
 // ============================================================
+mark("charts");
 await step("s9", async () => {
   await ev(() => { hideText(); hideShot("assets/scorecard-crop.png"); hideShot("risk-ledger.png"); });
   await wait(150);
@@ -257,6 +278,7 @@ await wait(2850);
 // ============================================================
 // SCENE 10 — 0:32  LIVE guided tour, .tb-tour + .tour-next x2 (4s)
 // ============================================================
+mark("tour-start-scene");
 await step("s10", async () => {
   await ev(() => { hideText(); hideShots(); });
   await wait(150);
@@ -267,11 +289,14 @@ await step("s10", async () => {
     showTitle('<div class="mid">One click. <span class="accent">Reviewed in priority order.</span></div>', { bottom: true });
   });
   await wait(700);
+  mark("tour-start");
   await clickInTool("tour-start", ".tb-tour");
   await wait(1100);
   await ev(() => hideText());
+  mark("tour-next-1");
   await clickInTool("tour-next-1", ".tour-next");
   await wait(950);
+  mark("tour-next-2");
   await clickInTool("tour-next-2", ".tour-next");
   await wait(900);
   await clickInTool("tour-exit", ".tour-exit");
@@ -281,6 +306,7 @@ await wait(500);
 // ============================================================
 // SCENE 11 — 0:36  LIVE theme switch synthwave -> dark (3s)
 // ============================================================
+mark("theme-scene");
 await step("s11", async () => {
   // scroll the live page onto the diff and zoom the camera in a touch so the recolor
   // is unmistakable and the diff text is readable when the theme morphs.
@@ -298,11 +324,13 @@ await step("s11", async () => {
   // guarantees the evenly-spaced frame grab lands on a clearly themed page.
   await clickInTool("gear-1", ".tb-gear");
   await wait(380);
+  mark("theme-synth");
   await clickInTool("theme-synth", '.theme-opt[data-theme-id="synthwave"]');
   await wait(1900);
   // then morph to dark for the second palette beat (and to seed scene 12's dark card)
   await clickInTool("gear-2", ".tb-gear");
   await wait(380);
+  mark("theme-dark");
   await clickInTool("theme-dark", '.theme-opt[data-theme-id="dark"]');
   await wait(900);
 });
@@ -310,6 +338,7 @@ await step("s11", async () => {
 // ============================================================
 // SCENE 12 — 0:39  CTA card (2s)
 // ============================================================
+mark("cta");
 await step("s12", async () => {
   await ev(() => { hideTool(); hideShots(); });
   await wait(150);
@@ -334,6 +363,7 @@ await wait(2600);
 
 // final hold (fade-out applied by ffmpeg)
 await wait(400);
+mark("end");
 
 console.log("closing context to flush video...");
 const video = page.video();
@@ -341,3 +371,8 @@ await context.close();
 await browser.close();
 const videoPath = video ? await video.path() : null;
 console.log("VIDEO_PATH=" + videoPath);
+
+// Write beat timestamps for reproducible audio sync
+const marksPath = resolve(here, "../out/promo-marks.json");
+writeFileSync(marksPath, JSON.stringify({ videoPath, beats: _beats }, null, 2));
+console.log("MARKS_PATH=" + marksPath);

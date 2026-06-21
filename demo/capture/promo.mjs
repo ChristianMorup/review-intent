@@ -230,13 +230,14 @@ await step("s8", async () => {
   await ev(() => { hideText(); });
   await wait(150);
   await ev(() => {
-    // measured (landscape crop) settles upper-left; claimed ledger slides in from the
-    // right and fills the rest — a genuine split-screen, both cards legible.
-    showShot("assets/scorecard-crop.png", { fromScale: 1.58, fromTx: 0, fromTy: -40,
-      scale: 0.95, tx: -560, ty: -260, duration: 900 });
+    // genuine split-screen, BOTH cards fully inside the frame (no edge clipping):
+    // scorecard-crop 982x545 @0.70 => 687x382 centred x=470 (left 127, right 813);
+    // risk-ledger 982x1166 @0.70 => 687x816 centred x=1390 (left 1046, right 1733).
+    showShot("assets/scorecard-crop.png", { fromScale: 0.74, fromTx: -490, fromTy: 30,
+      scale: 0.70, tx: -490, ty: 30, duration: 900 });
     showShot("risk-ledger.png", {
-      fromScale: 0.78, fromTx: 1300, fromTy: 40,
-      scale: 0.80, tx: 470, ty: 40, duration: 1000
+      fromScale: 0.66, fromTx: 1300, fromTy: 30,
+      scale: 0.70, tx: 430, ty: 30, duration: 1000
     });
   });
   await wait(1100);

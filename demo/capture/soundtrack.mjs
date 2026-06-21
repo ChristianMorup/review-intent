@@ -34,6 +34,14 @@ const marksData = JSON.parse(readFileSync(marksPath, "utf8"));
 const B = {};
 for (const { label, ms } of marksData.beats) B[label] = ms / 1000;
 
+// The wall-clock marks (from page creation) run ~0.9s ahead of the recorded video's
+// t=0 — Playwright's recordVideo has a startup latency before the first frame lands.
+// Subtract that offset so every synced hit (click, LGTM impact, the drop) lines up
+// with what's actually on screen instead of playing ~0.9s late.
+const VIDEO_OFFSET = 0.90;
+for (const k in B) B[k] = Math.max(0, B[k] - VIDEO_OFFSET);
+console.log(`Applied VIDEO_OFFSET=${VIDEO_OFFSET}s to align audio with recorded video.`);
+
 const webmPath = marksData.videoPath;
 
 console.log("Beat map (seconds):");
@@ -333,21 +341,11 @@ const cta = [
 
 // APPROVE CLICK: crisp short UI click when the cursor presses the Approve button
 const clickT2 = t["approve-click"] ?? 9.0;
-// A real UI click is a tiny broadband NOISE impulse with no tone — two ultra-fast
-// transients (the press "tk" + a quieter release "k") in the 1.5–7 kHz click band.
+// Real recorded UI click — Windows "Navigation Start" (64ms). Muxed as input [1]
+// so it's an actual click, not a synth approximation. NOTE: placeholder asset —
+// Microsoft IP; swap for a CC0/royalty-free click before any public release.
 const click = [
-  `anoisesrc=d=0.05:c=white:a=1.0:r=44100[ck_n0]`,
-  `[ck_n0]highpass=f=1500,lowpass=f=7000[ck_bp]`,
-  // press transient: instant attack, ~10ms decay
-  `[ck_bp]volume='if(lt(t,0.0003),1.0,exp(-220*(t-0.0003)))':eval=frame[ck_press]`,
-  `[ck_press]volume=2.4[ck_p]`,
-  // release transient: a second, softer tick ~35ms later (the "clack")
-  `anoisesrc=d=0.05:c=white:a=1.0:r=44100[ck_n1]`,
-  `[ck_n1]highpass=f=1800,lowpass=f=7500[ck_bp2]`,
-  `[ck_bp2]volume='if(lt(t,0.035),0.0,if(lt(t,0.0354),1.0,exp(-260*(t-0.0354))))':eval=frame[ck_rel]`,
-  `[ck_rel]volume=1.4[ck_r]`,
-  `[ck_p][ck_r]amix=inputs=2:normalize=0[ck_mix]`,
-  `[ck_mix]${adelay(clickT2)}[click_hit]`,
+  `[1:a]atrim=0:0.30,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=32,${adelay(clickT2)}[click_hit]`,
 ];
 
 // ── Build aeval filter nodes ──────────────────────────────────────────────────
@@ -405,6 +403,7 @@ const audioPath = resolve(outDir, "review-intent-audio.wav");
 // Use -/filter_complex (newer syntax) to pass filter from file
 ffmpeg([
   "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo:d=${f4(aDur+1)}`,
+  "-i", "C:/Windows/Media/Windows Navigation Start.wav",   // input [1] → the real click one-shot
   "-/filter_complex", filterPath,
   "-map", "[limited]",
   "-c:a", "pcm_s16le", "-ar", "44100",

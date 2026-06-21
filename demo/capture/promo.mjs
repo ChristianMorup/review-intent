@@ -107,7 +107,7 @@ await step("s2", async () => {
   await wait(500);
   await ev(() => moveCursor(1560, 880, 2400));
 });
-await wait(3000);
+await wait(2300);
 
 // ============================================================
 // SCENE 3 — 0:07.5  "LGTM" — click, stamp, glitch (3s)

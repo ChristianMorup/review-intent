@@ -1839,16 +1839,22 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Review comments ── */
-.cbox { margin-top: 10px; }
-.hunk-notes .cbox { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+/* ── Review annotations (comments + questions) ── */
+.cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hunk-notes .cbox-group { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+.cbox { display: inline-flex; }
+.cbox.open { flex-basis: 100%; flex-direction: column; }
 .cbtn {
-  font-size: 12px; line-height: 1; cursor: pointer; color: var(--ink-soft);
-  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px;
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 11px;
 }
-.cbtn:hover { border-color: var(--accent); }
-.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); }
-.cbox.has-comment .cbtn::after { content: " •"; color: var(--accent); }
+.cbtn:hover { border-color: var(--accent); color: var(--accent); }
+.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cbox.has-comment .cbtn::after { content: " •"; }
+.cbtn-q { color: var(--add); }
+.cbtn-q:hover { border-color: var(--add); color: var(--add); }
+.cbox.has-question .cbtn-q { border-color: var(--add); background: var(--add-soft, var(--accent-soft)); color: var(--add); }
+.cbox.has-question .cbtn-q::after { content: " •"; }
 .cinput {
   display: none; width: 100%; margin-top: 8px; resize: vertical; min-height: 54px;
   font: 13px/1.5 var(--sans); color: var(--ink);

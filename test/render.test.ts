@@ -389,6 +389,11 @@ describe("renderHtml", () => {
     expect(html).toContain('[data-theme="nord"]');       // a theme CSS block
     expect(html).toContain('data-theme-id="hacker"');    // a menu option
   });
+
+  it("styles the question control distinctly and marks unsent questions", () => {
+    expect(html).toContain(".cbtn-q");
+    expect(html).toContain(".cbox.has-question");
+  });
 });
 
 describe("renderHtml when lizard is unavailable", () => {

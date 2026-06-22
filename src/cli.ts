@@ -4,16 +4,13 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import open from "open";
-import { resolveBase, getDiff, GitError } from "./git.js";
-import { loadArtifact, ArtifactError, DEFAULT_ARTIFACT_PATH } from "./artifact.js";
-import { parseDiffText } from "./diff-parser.js";
-import { buildReviewModel } from "./match.js";
+import { GitError } from "./git.js";
+import { ArtifactError, DEFAULT_ARTIFACT_PATH } from "./artifact.js";
 import { renderHtml } from "./render.js";
-import { loadConfig, ConfigError } from "./config.js";
-import { buildScorecard, isCodePath } from "./scorecard.js";
-import { scanRepo, buildReachGraph } from "./reach.js";
-import { analyzeComplexity } from "./complexity.js";
-import { findGaps, formatGaps } from "./completeness.js";
+import { ConfigError } from "./config.js";
+import { formatGaps } from "./completeness.js";
+import { buildReview } from "./pipeline.js";
+import { runMcp } from "./mcp.js";
 import {
   installSkill,
   uninstallSkill,
@@ -25,6 +22,7 @@ const HELP = `review-intent — render an intent-annotated diff review in your b
 
 Usage:
   review-intent [options]
+  review-intent mcp
   review-intent skill install [--local] [--force]
   review-intent skill uninstall [--local] [--force]
 
@@ -37,6 +35,7 @@ Options:
   -h, --help          Show this help
 
 Commands:
+  mcp                 Start the MCP stdio server exposing the review_changes tool
   skill install       Install the review-intent-authoring Claude Code skill
                       (default: ~/.claude/skills; --local: ./.claude/skills)
   skill uninstall     Remove the skill
@@ -93,6 +92,10 @@ async function main(): Promise<void> {
     await runSkill(rawArgv.slice(1));
     return;
   }
+  if (rawArgv[0] === "mcp") {
+    await runMcp(rawArgv.slice(1));
+    return;
+  }
 
   const { values } = parseArgs({
     options: {
@@ -111,35 +114,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const cwd = process.cwd();
-  const base = resolveBase(cwd, values.base);
-  const { text: rawDiff, scope: diffScope } = getDiff(cwd, base);
-  const artifact = loadArtifact(cwd, values.artifact);
-  const config = loadConfig(cwd);
-  const diff = parseDiffText(rawDiff);
-
-  // Part 1: objective scorecard, computed from the diff.
-  const scorecard = buildScorecard(diff, config);
-
-  // Part 3: file-level reach, computed by scanning the repo for importers of
-  // the changed code files.
-  const changedCodePaths = diff
-    .filter((f) => f.status !== "deleted" && isCodePath(f.path))
-    .map((f) => f.path);
-  const { files: repoFiles, truncated } = scanRepo(cwd);
-  const reach = buildReachGraph(repoFiles, changedCodePaths, {
-    scanTruncated: truncated,
+  const { model, gaps } = buildReview({
+    cwd: process.cwd(),
+    base: values.base,
+    artifact: values.artifact,
   });
 
-  // Part 1 (cont.): measured cyclomatic complexity of the changed code, via the
-  // external lizard analyzer. Degrades gracefully if lizard isn't installed.
-  const complexity = analyzeComplexity(cwd, changedCodePaths, config.complexityThreshold);
-
-  const model = buildReviewModel(artifact, diff, base, scorecard, reach, complexity, diffScope);
 
   // Strict completeness gate: refuse to render incomplete intent unless the
   // author explicitly opts into a draft.
-  const gaps = findGaps(model);
   if (gaps.length > 0 && !values["allow-gaps"]) {
     process.stderr.write(`\n${formatGaps(gaps)}\n`);
     process.exitCode = 1;

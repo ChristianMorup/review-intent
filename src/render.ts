@@ -13,8 +13,12 @@ import { isTestPath, isCodePath, isNoisePath } from "./scorecard.js";
 import { reviewOrder, type RankedFile } from "./review-order.js";
 import { THEMES, themeCss } from "./themes.js";
 
-/** Pure: produce a self-contained HTML document from the review model. */
-export function renderHtml(model: ReviewModel): string {
+/** Pure: produce a self-contained HTML document from the review model.
+ *  With `opts.submit` the page gains an Approve / Request-changes bar that POSTs
+ *  the assembled prompt to a same-origin `/submit` endpoint (used by the MCP
+ *  tool). With submit off (the default) the output is byte-identical to before. */
+export function renderHtml(model: ReviewModel, opts?: { submit?: boolean }): string {
+  const submit = opts?.submit === true;
   const ranked = reviewOrder(model);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -22,7 +26,7 @@ export function renderHtml(model: ReviewModel): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(model.title)} — intent review</title>
-<style>${CSS}</style>
+<style>${CSS}</style>${submit ? `<style>.fb-submit{display:flex;gap:12px;align-items:center;margin-top:14px}.fb-approve{font:600 12px/1 var(--mono);cursor:pointer;color:var(--on-accent);background:var(--add);border:1px solid var(--add);border-radius:8px;padding:9px 16px}.fb-request{font:600 12px/1 var(--mono);cursor:pointer;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:9px 16px}.fb-sent{color:var(--muted);font:600 12px/1 var(--mono)}</style>` : ""}
 </head>
 <body>
 ${themeScript()}
@@ -64,7 +68,7 @@ ${movable("diagrams", renderDiagrams(model))}
 </main>
 
 ${renderFilesWithoutChanges(model)}
-${renderFeedbackPanel(model)}
+${renderFeedbackPanel(model, submit)}
 </div>
 </div>
 
@@ -75,7 +79,7 @@ ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
 ${viewedScript(model)}
 ${pinScript(model)}
-${commentScript(model)}
+${commentScript(model, submit)}
 ${tourScript(model, ranked)}
 </body>
 </html>`;
@@ -1264,7 +1268,7 @@ function renderFilesWithoutChanges(model: ReviewModel): string {
 /** Gathered review feedback: page-level comment + a live, readonly prompt the
  *  reviewer copies back to the agent. Assembly happens client-side in
  *  commentScript; this is the pure markup shell. */
-function renderFeedbackPanel(model: ReviewModel): string {
+function renderFeedbackPanel(model: ReviewModel, submit = false): string {
   if (model.files.length === 0) return "";
   return `<section class="review-feedback" id="feedback">
   <h2>Review feedback</h2>
@@ -1283,7 +1287,12 @@ function renderFeedbackPanel(model: ReviewModel): string {
   <div class="fb-actions">
     <button class="fb-copy" type="button">Copy as prompt</button>
     <span class="fb-copied" hidden>Copied ✓</span>
-  </div>
+  </div>${submit ? `
+  <div class="fb-submit">
+    <button class="fb-approve" type="button">Approve</button>
+    <button class="fb-request" type="button">Request changes</button>
+    <span class="fb-sent" hidden>Sent — you can close this tab</span>
+  </div>` : ""}
 </section>`;
 }
 
@@ -2052,7 +2061,7 @@ function viewedScript(model: ReviewModel): string {
  *  sync, and copy. Questions are emitted first — they're the blocking decisions.
  *  Each kind is bucketed by the textarea's data-akind; within a kind, items are
  *  grouped by file then hunk in DOM order (= review order). */
-function commentScript(model: ReviewModel): string {
+function commentScript(model: ReviewModel, submit = false): string {
   const KEY = `review-intent:comments:${model.title}@${model.base}`;
   const META = JSON.stringify({ title: model.title, base: model.base }).replace(/<\//g, "<\\/");
   return `<script>
@@ -2158,7 +2167,30 @@ function commentScript(model: ReviewModel): string {
         } else if (ok) { flash(); }
       });
     }
-
+${submit ? `
+    var approveBtn = document.querySelector(".fb-approve");
+    var requestBtn = document.querySelector(".fb-request");
+    var sent = document.querySelector(".fb-sent");
+    function send(decision) {
+      assemble();
+      var prompt = out ? out.value : "";
+      if (approveBtn) approveBtn.disabled = true;
+      if (requestBtn) requestBtn.disabled = true;
+      fetch("/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: decision, prompt: prompt })
+      }).then(function () {
+        if (sent) { sent.textContent = "Sent — you can close this tab"; sent.hidden = false; }
+      }).catch(function () {
+        if (approveBtn) approveBtn.disabled = false;
+        if (requestBtn) requestBtn.disabled = false;
+        if (sent) { sent.textContent = "Submit failed — is the review server still running? Try again."; sent.hidden = false; }
+      });
+    }
+    if (approveBtn) approveBtn.addEventListener("click", function () { send("approve"); });
+    if (requestBtn) requestBtn.addEventListener("click", function () { send("request-changes"); });
+` : ""}
     assemble();
   })();
 </script>`;

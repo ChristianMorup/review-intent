@@ -93,6 +93,36 @@ resolve — so you close the review loop without ever leaving the page.
   <img src="docs/media/review-comment.png" alt="Review comments assembled into an agent prompt" width="100%">
 </p>
 
+### Use it as a tool (MCP)
+
+Skip the copy-paste entirely. `review-intent mcp` starts a Model Context Protocol
+stdio server that exposes one tool, `review_changes`. An agent (e.g. Claude Code)
+calls it; the tool renders the branch diff (`base...HEAD`) as a review page, opens it in your browser,
+and **blocks until you click _Approve_ or _Request changes_** — then returns your
+decision plus the assembled feedback straight back to the agent. The human stays
+in the loop without ever pasting a prompt.
+
+Register it with Claude Code (`~/.claude.json` or a project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "review-intent": {
+      "command": "review-intent",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+No global install? Use `npx`: `"command": "npx", "args": ["-y", "@christianmorup/review-intent", "mcp"]`.
+
+The tool takes optional `cwd`, `base`, `artifact`, and `allowGaps` arguments and
+honors the same completeness gate as the CLI: if intent is incomplete (and
+`allowGaps` is false) it returns the gaps as an error instead of opening the
+browser. The authoring skill (below) knows about this tool and can offer to drive
+the review through it once the intent artifact is written.
+
 ### Make it yours
 
 Fourteen built-in themes, switched live and remembered between runs — from Paper to

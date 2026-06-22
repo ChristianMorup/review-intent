@@ -605,3 +605,45 @@ describe("renderHtml pin-to-rail layout", () => {
     expect(html).toContain("body.has-pins .diff-scope-banner");
   });
 });
+
+describe("renderHtml submit flag (MCP tool mode)", () => {
+  it("emits byte-identical output when submit is false (the default)", () => {
+    // Locks the byte-identity guarantee beyond the substring assertions: every
+    // submit-mode insertion must contribute the empty string with no stray chars.
+    expect(renderHtml(model)).toBe(renderHtml(model, { submit: false }));
+  });
+
+  it("default output has none of the submit-bar markup", () => {
+    const def = renderHtml(model);
+    expect(def).not.toContain("fb-submit");
+    expect(def).not.toContain("fb-approve");
+    expect(def).not.toContain('"/submit"');
+  });
+
+  it("adds the Approve / Request-changes bar and /submit wiring when submit is true", () => {
+    const sub = renderHtml(model, { submit: true });
+    expect(sub).toContain('class="fb-submit"');
+    expect(sub).toContain('class="fb-approve"');
+    expect(sub).toContain('class="fb-request"');
+    expect(sub).toContain('"/submit"');
+    expect(sub).toContain("Sent — you can close this tab");
+    expect(sub).toContain('send("approve")');
+    expect(sub).toContain('send("request-changes")');
+  });
+
+  it("suppresses the submit bar on an empty diff even when submit is true", () => {
+    const empty = {
+      ...model,
+      files: [],
+      reach: { changed: [], edges: [] },
+      intentCoverage: { filesCovered: 0, filesTotal: 0, hunksCovered: 0, hunksTotal: 0 },
+    };
+    const html = renderHtml(empty, { submit: true });
+    // The feedback panel early-returns on an empty diff, so the actual submit
+    // bar and its buttons are absent (the submit-only stylesheet, harmless, may
+    // still reference the .fb-submit class).
+    expect(html).not.toContain('class="fb-submit"');
+    expect(html).not.toContain('class="fb-approve"');
+    expect(html).not.toContain('class="fb-request"');
+  });
+});

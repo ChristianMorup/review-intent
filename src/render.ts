@@ -36,6 +36,7 @@ ${renderTopbar(model)}
     <div class="overall">${md(model.overall)}</div>
   </details>
 </header>
+${renderDiffScopeBanner(model)}
 
 <div class="layout">
 <aside class="rail" id="rail" aria-label="Pinned blocks"></aside>
@@ -209,6 +210,22 @@ function themeScript(): string {
     });
   })();
 </script>`;
+}
+
+/** Banner shown when the diff includes uncommitted working-tree changes.
+ *  Returns empty string when the diff is clean (pure; no I/O). */
+function renderDiffScopeBanner(model: ReviewModel): string {
+  const s = model.diffScope;
+  if (!s.includesUncommitted) return "";
+  const u = s.uncommittedFiles.length;
+  const t = s.untrackedFiles.length;
+  const parts: string[] = [];
+  if (u) parts.push(`${u} file${u === 1 ? "" : "s"} with uncommitted changes`);
+  if (t) parts.push(`${t} untracked file${t === 1 ? "" : "s"}`);
+  return `<style>.diff-scope-banner{margin:0 auto 18px;max-width:var(--maxw);padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);font-size:14px;}</style>
+<div class="diff-scope-banner" role="note">⚠ This review includes ${parts.join(
+    " + ",
+  )} — not yet committed (relative to HEAD).</div>`;
 }
 
 /** Slim sticky bar: persistent wayfinding across the long scroll. The progress
@@ -1140,6 +1157,13 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
     <code class="path">${esc(file.path)}</code>
     <span class="file-rank" title="review priority">#${r.rank}</span>
     ${fileBadges(r)}
+    ${
+      file.untracked
+        ? `<span class="fbadge fbadge-uncommitted" title="new file, not yet committed">untracked</span>`
+        : file.uncommitted
+          ? `<span class="fbadge fbadge-uncommitted" title="has uncommitted changes (relative to HEAD)">uncommitted</span>`
+          : ""
+    }
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
   </summary>
   <div class="file-body">
@@ -1765,6 +1789,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 .fbadge-hot { color: var(--del); border-color: var(--del-border); background: var(--del-soft); }
 .fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
+.fbadge-uncommitted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
 .viewed-toggle {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);

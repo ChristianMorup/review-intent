@@ -1,0 +1,4498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Add intent-coverage gate and blast-radius visuals — intent review</title>
+<style>
+/* ── review-intent · clean editorial dossier ───────────────────────────────
+   Light, warm-paper canvas. Prose is set in a humanist sans; every *measured*
+   value — vitals, metrics, code, labels — is set in mono, so the page reads
+   like an instrument. Colour is rationed: green/red/amber carry meaning, one
+   quiet blue carries structure. */
+:root {
+  --paper: #f5f3ee;      /* page canvas (warm paper) */
+  --surface: #fffdf9;    /* cards / raised panels */
+  --surface-2: #efece4;  /* recessed: diff gutter, file headers */
+  --ink: #211f1b;        /* primary text */
+  --ink-soft: #565249;   /* secondary text */
+  --muted: #8e887c;      /* tertiary / labels */
+  --line: #e4ded2;       /* hairline */
+  --line-2: #d6cfbf;     /* stronger hairline */
+  --accent: #2f5d9c;     /* the one structural accent */
+  --accent-soft: #e9eff7;
+  --add: #1f7a3d; --add-soft: #ebf4ed;
+  --del: #bd3a2e; --del-soft: #faece9;
+  --warn: #8a6400; --warn-soft: #f5eed8;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
+  --maxw: 1080px;
+  /* derived (were hard-coded literals; defaults reproduce paper exactly) */
+  --add-border: #c7e2cd; --del-border: #eccac4;
+  --warn-border: #e6d8a8; --accent-border: #cfdcef;
+  --accent-shadow: rgba(47,93,156,.1);
+  --on-accent: #fff;
+  --glass: rgba(255,253,249,.9);
+  --code-add: #115c2c; --code-del: #952c22;
+  /* visual-summary chart palette */
+  --viz-add: #1f9d4d; --viz-add-ink: #137a36;
+  --viz-del: #dd574d; --viz-del-ink: #c0362c;
+  --viz-warn: #c79100; --viz-accent: #2f5d9c; --viz-line: #e3ded3;
+  --viz-node: #ffffff; --viz-node-stroke: #b8b1a4; --viz-accent-stroke: #21456f;
+  --viz-cell-stroke: #ffffff;
+  --viz-noise: #9b958a; --viz-other: #7e776c;
+  --viz-cell-label: #23211d; --viz-zone: rgba(189, 58, 46, 0.09);
+  --kind-e2e: #7a4fa0;
+  --viz-s1: #5b7db1; --viz-s2: #5fa389; --viz-s3: #b08a5a; --viz-s4: #a07ba6;
+  --viz-s5: #c47d72; --viz-s6: #7fa86a; --viz-s7: #d0a85a; --viz-s8: #7a93b8;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 15px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+
+/* Every top-level band shares one centred measure with hairline separators. */
+.page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans {
+  max-width: var(--maxw); margin: 0 auto; padding: 36px 40px;
+}
+.blast, .visuals, .tests, .diagrams, .vitals { border-top: 1px solid var(--line); }
+
+/* Section eyebrows — small, lettered, quiet. The recurring section-head idiom. */
+.band-head h2 {
+  margin: 0 0 22px; font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .14em;
+  display: flex; align-items: baseline; gap: 12px;
+}
+
+/* ── Masthead ── */
+.page-head { padding-top: 48px; padding-bottom: 40px; }
+.eyebrow {
+  font: 600 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted);
+  text-transform: uppercase; margin-bottom: 18px;
+}
+.eyebrow-diff {
+  color: var(--accent); background: var(--accent-soft);
+  border-radius: 5px; padding: 3px 8px; margin-left: 4px; letter-spacing: .02em;
+}
+.page-head h1 {
+  margin: 0 0 18px; font-size: clamp(26px, 4vw, 38px); line-height: 1.12;
+  font-weight: 720; letter-spacing: -.02em; max-width: 22ch;
+}
+.tldr {
+  max-width: 70ch; font-size: 19px; line-height: 1.5; color: var(--ink-soft);
+  margin: 0 0 22px;
+}
+.tldr p { margin: 0; }
+.overall-wrap { max-width: 72ch; border-top: 1px solid var(--line); padding-top: 16px; }
+.overall-wrap > summary {
+  cursor: pointer; color: var(--muted); font: 600 11px/1 var(--mono);
+  text-transform: uppercase; letter-spacing: .1em; list-style: none;
+  display: inline-flex; align-items: center; gap: 7px; user-select: none;
+}
+.overall-wrap > summary::-webkit-details-marker { display: none; }
+.overall-wrap > summary::before { content: "›"; font-size: 15px; transition: transform .15s; display: inline-block; }
+.overall-wrap[open] > summary::before { transform: rotate(90deg); }
+.overall { color: var(--ink-soft); margin-top: 14px; font-size: 15px; }
+.overall p { margin: 0 0 12px; }
+
+/* ── Vitals: the at-a-glance overview spine ── */
+.vitals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  gap: 1px; background: var(--line); background-clip: content-box;
+  padding-top: 26px; padding-bottom: 26px;
+}
+/* Cells sit on the paper; the 1px grid gap reveals the container's line colour
+   as a hairline between every cell — clean dividers at any column count, no
+   stray edge borders when the grid wraps (the old flex-wrap left those). */
+.vital {
+  min-width: 0; padding: 6px 22px; background: var(--paper);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.vital-num {
+  font: 600 26px/1 var(--mono); letter-spacing: -.01em; color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.vital-lbl {
+  font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.vital-add .vital-num { color: var(--add); }
+.vital-del .vital-num { color: var(--del); }
+.vital-warn .vital-num { color: var(--warn); }
+
+/* ── Cards ── */
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px 20px;
+}
+.card h3 {
+  margin: 0 0 14px; font-size: 14px; font-weight: 680;
+  display: flex; align-items: center; gap: 10px;
+}
+/* claimed vs measured provenance tag — quiet, lettered */
+.src {
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); background: var(--surface-2);
+  border-radius: 4px; padding: 3px 7px;
+}
+
+.blast-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.metrics { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 14px; font: 13px/1.4 var(--mono); }
+.metrics > span { font-variant-numeric: tabular-nums; }
+.metrics b { font-weight: 680; }
+.metrics .add { color: var(--add); }
+.metrics .del { color: var(--del); }
+.metrics-extra {
+  font-size: 12px; color: var(--ink-soft); gap: 8px 16px;
+  padding-top: 14px; border-top: 1px solid var(--line);
+}
+.metrics-extra code { font-size: 11px; padding: 1px 5px; }
+.metrics-extra .flag { color: var(--del); font-weight: 700; }
+.muted { color: var(--muted); }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.badge {
+  font: 600 11px/1.5 var(--mono); letter-spacing: .02em;
+  border-radius: 6px; padding: 3px 9px; border: 1px solid var(--line-2);
+  color: var(--ink-soft); background: var(--surface-2);
+}
+.tone-danger { background: var(--del-soft); color: var(--del); border-color: var(--del-border); }
+.tone-warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.tone-info { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-border); }
+.tone-ok { background: var(--add-soft); color: var(--add); border-color: var(--add-border); }
+
+.risk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.risk-table th {
+  text-align: left; color: var(--muted); font: 600 11px/1 var(--mono);
+  text-transform: uppercase; letter-spacing: .06em;
+  padding: 0 10px 8px; border-bottom: 1px solid var(--line-2);
+}
+.risk-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink-soft); }
+.risk-table tr:last-child td { border-bottom: 0; }
+.risk-table td p, .risks .nudge p { margin: 0; }
+.nudge { color: var(--warn); font-size: 13.5px; background: var(--warn-soft); border-radius: 8px; padding: 12px 14px; }
+.reach { margin-top: 18px; }
+.reach .mermaid { margin-top: 8px; }
+.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
+@media (max-width: 820px) { .blast-grid { grid-template-columns: 1fr; } }
+
+/* ── Visual summary ── */
+.viz-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px; align-items: start;
+}
+.viz.viz-span { grid-column: auto; }
+.viz svg { width: 100%; height: auto; display: block; }
+.viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
+.viz-ripple { max-width: 720px; margin: 0 auto; }
+/* Thumbnail clamp for the overview grid; lifted inside the lightbox. */
+.zoomable svg { max-height: 168px; }
+.zoomable .mermaid { max-height: 200px; overflow: hidden; }
+.zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
+.zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
+.zoomable::after {
+  content: "⤢ expand"; position: absolute; top: 10px; right: 12px;
+  font: 600 10px/1 var(--mono); letter-spacing: .04em; color: var(--accent);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 5px;
+  padding: 3px 7px; opacity: 0; transition: opacity .15s; pointer-events: none;
+}
+.zoomable:hover::after { opacity: 1; }
+.viz-cap { color: var(--muted); font-size: 11.5px; margin: 10px 0 0; line-height: 1.5; }
+.viz-label { font-family: var(--mono); font-size: 11px; fill: var(--ink-soft); }
+.viz-num { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.viz-axis { stroke: var(--line-2); stroke-width: 1; }
+.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.viz-rings { display: flex; gap: 8px; justify-content: space-around; }
+.viz-ring-svg { max-width: 150px; }
+.viz-ring-pct { fill: var(--ink); font-size: 22px; font-weight: 700; font-family: var(--sans); }
+.viz-ring-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
+.viz-danger { fill: var(--viz-zone); }
+.viz-danger-label { fill: var(--del); }
+.viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
+.viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
+.viz-dot-hot { fill: var(--del); }
+.viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
+.viz-lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
+.viz-lg-muted { color: var(--muted); }
+.viz-lg-dot { flex: none; }
+.zoomable .viz-lg-dot { max-height: none; }
+.viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: var(--viz-zone); border: 1px solid var(--del-border); }
+.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
+.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
+.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+@media (max-width: 820px) { .viz-grid { grid-template-columns: 1fr; } }
+
+/* ── Tests (claimed) ── */
+.tests .test-count { font-size: 12px; font-weight: 400; font-family: var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted); }
+.test-group { margin-bottom: 22px; max-width: 80ch; }
+.test-group:last-child { margin-bottom: 0; }
+.test-kind {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 8px;
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--k, var(--muted));
+}
+.test-kind::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.test-list { list-style: none; margin: 0; padding: 0; }
+.test-case {
+  position: relative; padding: 8px 0 8px 22px; border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+}
+.test-group:last-child .test-case:last-child { border-bottom: 0; }
+.test-case::before {
+  content: ""; position: absolute; left: 4px; top: 15px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--k, var(--muted));
+}
+.test-case p { display: inline; margin: 0; }
+.test-name {
+  font-size: 11px; color: var(--muted);
+  background: var(--surface-2); margin-left: 7px;
+}
+
+/* ── Diagrams ── */
+.diagram-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px; align-items: start;
+}
+.diagram { margin: 0; }
+.diagram h2 { font-size: 13px; color: var(--ink-soft); margin: 0 0 10px; font-weight: 680; }
+.diagram.zoomable { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+.mermaid {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px; overflow: auto;
+}
+
+/* ── File diffs ── */
+main { display: flex; flex-direction: column; gap: 26px; }
+.file {
+  border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; background: var(--surface);
+}
+.file-head {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  border-bottom: 1px solid var(--line); background: var(--surface-2);
+}
+.path { font-family: var(--mono); font-size: 13px; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.status {
+  font: 700 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em;
+  padding: 4px 8px; border-radius: 5px;
+}
+.status-added { background: var(--add-soft); color: var(--add); }
+.status-deleted { background: var(--del-soft); color: var(--del); }
+.status-modified { background: var(--accent-soft); color: var(--accent); }
+.status-renamed { background: var(--warn-soft); color: var(--warn); }
+.file-intent {
+  padding: 16px; color: var(--ink-soft); border-bottom: 1px solid var(--line);
+}
+.file-intent p { margin: 0 0 8px; }
+.hunk-row {
+  display: grid; grid-template-columns: 1fr 340px; gap: 0;
+  border-top: 1px solid var(--line);
+}
+.hunk-diff { overflow: auto; min-width: 0; }
+.hunk-header {
+  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  padding: 7px 14px; background: var(--surface-2); border-bottom: 1px solid var(--line);
+}
+table.diff { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; }
+.ln td { padding: 1px 8px; white-space: pre; vertical-align: top; }
+.num { color: var(--muted); text-align: right; width: 1%; user-select: none; }
+.sign { width: 1%; user-select: none; color: var(--muted); }
+.code { width: 100%; color: var(--ink); }
+.ln-add { background: var(--add-soft); }
+.ln-add .code { color: var(--code-add); }
+.ln-add .sign { color: var(--add); }
+.ln-del { background: var(--del-soft); }
+.ln-del .code { color: var(--code-del); }
+.ln-del .sign { color: var(--del); }
+.hunk-notes {
+  border-left: 1px solid var(--line); padding: 14px 16px; background: var(--paper);
+}
+.note { margin-bottom: 12px; }
+.note:last-child { margin-bottom: 0; }
+.note p { margin: 0 0 6px; }
+.ww .what, .ww .why { margin-bottom: 7px; }
+.ww .why { margin-bottom: 0; }
+.ww p { margin: 0; display: inline; }
+.lbl {
+  display: inline-block; font: 700 9.5px/1.6 var(--mono); text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin-right: 7px;
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px; vertical-align: 1px;
+}
+.missing {
+  color: var(--del); font-weight: 600; font-size: 13px;
+  background: var(--del-soft); border: 1px solid var(--del-border); border-radius: 8px;
+  padding: 10px 12px;
+}
+.file-intent.missing { margin: 0; border-radius: 0; border-left: 0; border-right: 0; }
+.anchor {
+  display: inline-block; font-family: var(--mono); font-size: 11px;
+  color: var(--muted); margin-bottom: 4px;
+}
+.unmatched, .orphans { padding: 14px 16px; border-top: 1px solid var(--line); color: var(--ink-soft); }
+.orphans { background: transparent; }
+.orphans h2 { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .14em; margin: 0 0 12px; }
+.orphans ul { margin: 0; padding-left: 20px; }
+.unmatched h4 { margin: 0 0 8px; color: var(--warn); font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+code {
+  font-family: var(--mono); font-size: .92em;
+  background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+}
+.empty { color: var(--muted); }
+a { color: var(--accent); text-underline-offset: 2px; }
+@media (max-width: 820px) {
+  .page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans { padding: 28px 22px; }
+  .hunk-row { grid-template-columns: 1fr; }
+  .hunk-notes { border-left: 0; border-top: 1px dashed var(--line-2); }
+}
+
+/* ── Lightbox: click a thumbnail to view a figure full-size ── */
+#lightbox {
+  position: fixed; inset: 0; z-index: 1000; display: none;
+  align-items: center; justify-content: center; padding: 40px;
+  background: rgba(33, 31, 27, 0.5); backdrop-filter: blur(3px);
+}
+#lightbox.open { display: flex; }
+.lightbox-stage {
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 24px 28px; max-width: 1100px; width: 100%; max-height: 90vh; overflow: auto;
+  box-shadow: 0 24px 60px rgba(33,31,27,.22);
+}
+.lightbox-stage .card { background: transparent; border: 0; padding: 0; cursor: auto; }
+.lightbox-stage .zoomable::after { content: none; }
+.lightbox-stage svg { max-height: none; }
+.lightbox-stage .mermaid { max-height: none; overflow: auto; border: 0; padding: 0; }
+.lightbox-stage .diagram.zoomable { border: 0; padding: 0; }
+.lightbox-stage .diagram.zoomable h2 { font-size: 16px; }
+.lightbox-close {
+  position: fixed; top: 16px; right: 22px; z-index: 1001;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line-2);
+  border-radius: 8px; font-size: 18px; line-height: 1; cursor: pointer;
+  padding: 8px 13px;
+}
+.lightbox-close:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Sticky utility bar ── */
+html { scroll-behavior: smooth; scroll-padding-top: 48px; }
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; gap: 16px;
+  /* Align the bar's content with the page measure on wide screens; floor to a
+     small inset on narrow ones. */
+  padding: 9px max(18px, calc((100% - var(--maxw)) / 2 + 40px));
+  background: var(--glass);
+  backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
+  font: 12px/1 var(--mono);
+}
+/* Title absorbs all shrinkage and truncates; the counter + link never shrink. */
+.tb-title { flex: 0 1 auto; min-width: 0; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-progress { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tb-top { flex: none; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.tb-theme { position: relative; }
+.tb-gear {
+  background: none; border: 0; cursor: pointer; font-size: 15px;
+  color: var(--muted); padding: 4px 6px; line-height: 1; border-radius: 6px;
+}
+.tb-gear:hover { color: var(--ink); background: var(--surface-2); }
+.theme-menu {
+  position: absolute; right: 0; top: 130%; z-index: 50;
+  background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: 10px; padding: 8px; min-width: 180px;
+  box-shadow: 0 10px 30px rgba(33,31,27,.18);
+  display: grid; gap: 8px;
+}
+.theme-menu[hidden] { display: none; }
+.theme-grp-h {
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); margin: 2px 4px 4px;
+}
+.theme-opt {
+  display: block; width: 100%; text-align: left; background: none; border: 0;
+  cursor: pointer; padding: 5px 8px; border-radius: 6px; color: var(--ink-soft);
+  font: 13px/1.2 var(--sans);
+}
+.theme-opt:hover { background: var(--surface-2); color: var(--ink); }
+.theme-opt[aria-checked="true"] { color: var(--accent); font-weight: 600; }
+
+/* ── Review-first callout ── */
+.review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
+.review-first > h2 {
+  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.rf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.rf-card {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 9px;
+  background: var(--surface); text-decoration: none; color: var(--ink);
+  transition: border-color .15s, box-shadow .15s;
+}
+.rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
+.rf-rank { font: 700 13px/1 var(--mono); color: var(--accent); }
+.rf-path { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+.rf-reasons { display: flex; flex-wrap: wrap; gap: 4px 8px; width: 100%; }
+.rf-reasons span {
+  font: 600 10px/1.5 var(--mono); color: var(--ink-soft);
+  background: var(--surface-2); border-radius: 4px; padding: 2px 6px;
+}
+
+/* ── File index (spine) ── */
+.file-index { max-width: var(--maxw); margin: 0 auto; padding: 28px 40px; border-top: 1px solid var(--line); }
+.file-index > h2 {
+  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.fi-count { font-weight: 400; text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
+.fi-list { list-style: none; margin: 0; padding: 0; }
+.fi-row { border-bottom: 1px solid var(--line); }
+.fi-row:last-child { border-bottom: 0; }
+.fi-link {
+  display: flex; align-items: center; gap: 12px; padding: 8px 6px;
+  text-decoration: none; color: var(--ink); border-radius: 6px;
+}
+.fi-link:hover { background: var(--surface-2); }
+.fi-link.active { background: var(--accent-soft); }
+.fi-rank { font: 700 12px/1 var(--mono); color: var(--accent); width: 2.4em; flex: none; }
+.fi-path { font-size: 12.5px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; background: none; padding: 0; }
+.fi-sig { display: flex; gap: 4px 10px; flex: none; font: 11px/1.4 var(--mono); color: var(--muted); }
+.fi-sig .fi-hot { color: var(--del); font-weight: 700; }
+.fi-sig .fi-gap { color: var(--warn); font-weight: 700; }
+
+/* ── Collapsible analytics bands ── */
+.band { border: 0; }
+.band-head { cursor: pointer; list-style: none; }
+.band-head::-webkit-details-marker { display: none; }
+.band-head h2::before {
+  content: "›"; font-size: 15px; color: var(--muted); transition: transform .15s; display: inline-block;
+}
+.band[open] > .band-head h2::before { transform: rotate(90deg); }
+.band-body { padding-top: 22px; }
+
+/* ── File head badges + collapsible files + viewed state ── */
+.file > summary.file-head { cursor: pointer; list-style: none; }
+.file > summary.file-head::-webkit-details-marker { display: none; }
+.file-head { flex-wrap: wrap; }
+.file-rank { font: 700 11px/1 var(--mono); color: var(--accent); }
+.fbadges { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
+.fbadge {
+  font: 600 10px/1.5 var(--mono); border-radius: 4px; padding: 2px 6px;
+  background: var(--surface); border: 1px solid var(--line-2); color: var(--ink-soft);
+}
+.fbadge-hot { color: var(--del); border-color: var(--del-border); background: var(--del-soft); }
+.fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
+.fbadge-uncommitted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.viewed-toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  cursor: pointer; user-select: none;
+}
+.file.viewed { opacity: .55; }
+.file.viewed:hover { opacity: 1; }
+
+@media (max-width: 820px) {
+  .review-first, .file-index { padding: 22px; }
+  .fi-sig { width: 100%; }
+}
+
+/* ── Phones ── */
+@media (max-width: 560px) {
+  .vital-num { font-size: 22px; }
+  /* The 3-column risk ledger can't stay legible much below ~460px — let it
+     scroll inside its card rather than crushing every column to a sliver. */
+  .risks { overflow-x: auto; }
+  .risk-table { min-width: 440px; }
+  /* Give the lightbox the whole small screen. */
+  #lightbox { padding: 12px; }
+  .lightbox-close { top: 8px; right: 10px; }
+}
+
+/* ── Pin-to-rail: movable blocks + a sticky sidebar on wide screens ── */
+.movable { position: relative; }
+.rail:empty { display: none; }
+/* The pin affordance only exists where there's a rail to pin to (wide screens). */
+.pin-btn { display: none; }
+
+@media (min-width: 1920px) {
+  .pin-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: absolute; top: 12px; right: 14px; z-index: 3;
+    font: 12px/1 var(--mono); cursor: pointer;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px;
+    padding: 4px 6px; opacity: 0; transition: opacity .15s, border-color .15s;
+  }
+  .movable:hover > .pin-btn, .pin-btn:focus-visible { opacity: 1; }
+  .pin-btn[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+
+  /* The two-pane shell engages only once something is pinned; with an empty
+     rail the page stays the calm centred column it is below this width. */
+  body.has-pins .page-head { max-width: 1840px; }
+  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1840px) / 2 + 40px)); }
+  body.has-pins .layout {
+    max-width: 1840px; margin: 0 auto; padding: 0 40px;
+    display: grid; grid-template-columns: 320px minmax(0, 1fr);
+    gap: 36px; align-items: start;
+  }
+  body.has-pins .rail {
+    position: sticky; top: 56px; align-self: start;
+    max-height: calc(100vh - 72px); overflow: auto;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  body.has-pins .content { min-width: 0; }
+  /* Inside the shell, blocks fill their column instead of self-centring. */
+  body.has-pins .content > .movable > section,
+  body.has-pins .content > .movable > nav,
+  body.has-pins .content > main,
+  body.has-pins .content > .orphans,
+  body.has-pins .rail > .movable > section,
+  body.has-pins .rail > .movable > nav { max-width: none; margin: 0; }
+  /* Rail blocks: trim the band padding, drop the band rule, fit narrow charts
+     and let a wide table scroll rather than crush. */
+  body.has-pins .rail > .movable > section,
+  body.has-pins .rail > .movable > nav { padding: 18px 16px; border-top: 0; }
+  body.has-pins .rail .band-body { padding-top: 16px; }
+  body.has-pins .rail .blast-grid { grid-template-columns: 1fr; }
+  body.has-pins .rail .risks { overflow-x: auto; }
+  body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Review annotations (comments + questions) ── */
+.cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.hunk-notes .cbox-group { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+.cbox { display: inline-flex; }
+.cbox.open { flex-basis: 100%; flex-direction: column; }
+.cbtn {
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 11px;
+}
+.cbtn:hover { border-color: var(--accent); color: var(--accent); }
+.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cbox.has-comment .cbtn::after { content: " •"; }
+.cbtn-q { color: var(--add); }
+.cbtn-q:hover { border-color: var(--add); color: var(--add); }
+.cbox.has-question .cbtn-q { border-color: var(--add); background: var(--add-soft, var(--accent-soft)); color: var(--add); }
+.cbox.has-question .cbtn-q::after { content: " •"; }
+.cinput {
+  display: none; width: 100%; margin-top: 8px; resize: vertical; min-height: 54px;
+  font: 13px/1.5 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
+}
+.cbox.open .cinput { display: block; }
+
+/* ── Review feedback panel ── */
+.review-feedback { max-width: var(--maxw); margin: 0 auto; padding: 36px 40px; border-top: 1px solid var(--line); }
+.review-feedback > h2 {
+  margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .14em;
+}
+.rf-hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; max-width: 72ch; }
+.fb-general { display: block; margin-bottom: 14px; }
+.fb-general-lbl { display: block; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-bottom: 6px; }
+.fb-general-input {
+  display: block; width: 100%; resize: vertical; min-height: 60px;
+  font: 13px/1.5 var(--sans); color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
+}
+.fb-summary { font: 12px/1 var(--mono); color: var(--muted); margin-bottom: 14px; }
+.fb-out-head { margin: 0 0 8px; font-size: 13px; font-weight: 680; color: var(--ink-soft); }
+.fb-output {
+  display: block; width: 100%; min-height: 160px; resize: vertical;
+  font: 12.5px/1.55 var(--mono); color: var(--ink);
+  background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 8px; padding: 12px 14px;
+}
+.fb-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.fb-copy {
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--on-accent);
+  background: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 9px 16px;
+}
+.fb-copy:hover { filter: brightness(1.06); }
+.fb-copied { color: var(--add); font: 600 12px/1 var(--mono); }
+
+/* ── Guided tour ── */
+.tb-tour {
+  flex: none; font: 600 11px/1 var(--mono); cursor: pointer; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 6px; padding: 5px 9px;
+}
+.tb-tour:hover { border-color: var(--accent); }
+.tour {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 80;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 12px;
+  padding: 10px 14px; box-shadow: 0 10px 30px rgba(33,31,27,.18);
+  font: 12px/1.2 var(--mono); max-width: calc(100vw - 32px);
+}
+.tour[hidden] { display: none; }
+.tour-status { color: var(--ink-soft); }
+.tour-status b { color: var(--ink); }
+.tour-path { font-size: 11.5px; background: none; padding: 0; color: var(--accent); overflow-wrap: anywhere; }
+.tour-btn {
+  flex: none; font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 10px;
+}
+.tour-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.tour-btn:disabled { opacity: .4; cursor: default; }
+.tour-flash { animation: tour-flash 1.2s ease-out; }
+@keyframes tour-flash {
+  0% { box-shadow: 0 0 0 3px var(--accent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+@media (max-width: 560px) {
+  .tour { flex-wrap: wrap; justify-content: center; bottom: 10px; }
+}
+[data-theme="dark"] {
+  --paper: #1b1a17;
+  --surface: #232220;
+  --surface-2: #2c2a26;
+  --ink: #ece9e1;
+  --ink-soft: #b8b2a6;
+  --muted: #847d6f;
+  --line: #34322c;
+  --line-2: #44413a;
+  --accent: #6fa3e0;
+  --accent-soft: #20303f;
+  --add: #56c07a;
+  --add-soft: #18301f;
+  --del: #e8786c;
+  --del-soft: #3a201d;
+  --warn: #d6a64a;
+  --warn-soft: #332a16;
+  --add-border: #56c07a;
+  --del-border: #e8786c;
+  --warn-border: #d6a64a;
+  --accent-border: #6fa3e0;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #232220;
+  --code-add: #56c07a;
+  --code-del: #e8786c;
+  --viz-add: #56c07a;
+  --viz-add-ink: #56c07a;
+  --viz-del: #e8786c;
+  --viz-del-ink: #e8786c;
+  --viz-warn: #d6a64a;
+  --viz-accent: #6fa3e0;
+  --viz-line: #34322c;
+  --viz-node: #232220;
+  --viz-node-stroke: #44413a;
+  --viz-accent-stroke: #6fa3e0;
+  --viz-cell-stroke: #232220;
+  --viz-noise: #847d6f;
+  --viz-other: #847d6f;
+  --viz-cell-label: #ece9e1;
+  --viz-zone: #3a201d;
+  --kind-e2e: #6fa3e0;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="hacker"] {
+  --paper: #000800;
+  --surface: #021202;
+  --surface-2: #001a00;
+  --ink: #33ff66;
+  --ink-soft: #1faf47;
+  --muted: #0f7a2e;
+  --line: #093d12;
+  --line-2: #0e5a1c;
+  --accent: #7dff7d;
+  --accent-soft: #00270c;
+  --add: #39ff77;
+  --add-soft: #002a0e;
+  --del: #ff5f56;
+  --del-soft: #2a0a08;
+  --warn: #d4ff3a;
+  --warn-soft: #1d2a00;
+  --add-border: #39ff77;
+  --del-border: #ff5f56;
+  --warn-border: #d4ff3a;
+  --accent-border: #7dff7d;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #021202;
+  --code-add: #39ff77;
+  --code-del: #ff5f56;
+  --viz-add: #39ff77;
+  --viz-add-ink: #39ff77;
+  --viz-del: #ff5f56;
+  --viz-del-ink: #ff5f56;
+  --viz-warn: #d4ff3a;
+  --viz-accent: #7dff7d;
+  --viz-line: #093d12;
+  --viz-node: #021202;
+  --viz-node-stroke: #0e5a1c;
+  --viz-accent-stroke: #7dff7d;
+  --viz-cell-stroke: #021202;
+  --viz-noise: #0f7a2e;
+  --viz-other: #0f7a2e;
+  --viz-cell-label: #33ff66;
+  --viz-zone: #2a0a08;
+  --kind-e2e: #7dff7d;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+  --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
+[data-theme="solarized-light"] {
+  --paper: #fdf6e3;
+  --surface: #fdf6e3;
+  --surface-2: #eee8d5;
+  --ink: #586e75;
+  --ink-soft: #657b83;
+  --muted: #6c7b7b;
+  --line: #eee8d5;
+  --line-2: #d6cfbb;
+  --accent: #268bd2;
+  --accent-soft: #dcebf2;
+  --add: #5f6d00;
+  --add-soft: #eef0d8;
+  --del: #dc322f;
+  --del-soft: #f6e0db;
+  --warn: #8a6700;
+  --warn-soft: #f3ead0;
+  --add-border: #5f6d00;
+  --del-border: #dc322f;
+  --warn-border: #8a6700;
+  --accent-border: #268bd2;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #fdf6e3;
+  --code-add: #5f6d00;
+  --code-del: #dc322f;
+  --viz-add: #5f6d00;
+  --viz-add-ink: #5f6d00;
+  --viz-del: #dc322f;
+  --viz-del-ink: #dc322f;
+  --viz-warn: #8a6700;
+  --viz-accent: #268bd2;
+  --viz-line: #eee8d5;
+  --viz-node: #fdf6e3;
+  --viz-node-stroke: #d6cfbb;
+  --viz-accent-stroke: #268bd2;
+  --viz-cell-stroke: #fdf6e3;
+  --viz-noise: #6c7b7b;
+  --viz-other: #6c7b7b;
+  --viz-cell-label: #586e75;
+  --viz-zone: #f6e0db;
+  --kind-e2e: #268bd2;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="solarized-dark"] {
+  --paper: #002b36;
+  --surface: #073642;
+  --surface-2: #003744;
+  --ink: #93a1a1;
+  --ink-soft: #839496;
+  --muted: #6c8088;
+  --line: #0a4250;
+  --line-2: #135561;
+  --accent: #268bd2;
+  --accent-soft: #03323e;
+  --add: #859900;
+  --add-soft: #14331f;
+  --del: #dc322f;
+  --del-soft: #33161a;
+  --warn: #b58900;
+  --warn-soft: #2e2812;
+  --add-border: #859900;
+  --del-border: #dc322f;
+  --warn-border: #b58900;
+  --accent-border: #268bd2;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #073642;
+  --code-add: #859900;
+  --code-del: #dc322f;
+  --viz-add: #859900;
+  --viz-add-ink: #859900;
+  --viz-del: #dc322f;
+  --viz-del-ink: #dc322f;
+  --viz-warn: #b58900;
+  --viz-accent: #268bd2;
+  --viz-line: #0a4250;
+  --viz-node: #073642;
+  --viz-node-stroke: #135561;
+  --viz-accent-stroke: #268bd2;
+  --viz-cell-stroke: #073642;
+  --viz-noise: #6c8088;
+  --viz-other: #6c8088;
+  --viz-cell-label: #93a1a1;
+  --viz-zone: #33161a;
+  --kind-e2e: #268bd2;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="nord"] {
+  --paper: #2e3440;
+  --surface: #3b4252;
+  --surface-2: #434c5e;
+  --ink: #eceff4;
+  --ink-soft: #d8dee9;
+  --muted: #9aa5b5;
+  --line: #434c5e;
+  --line-2: #4c566a;
+  --accent: #88c0d0;
+  --accent-soft: #2b333f;
+  --add: #a3be8c;
+  --add-soft: #2c3a2e;
+  --del: #bf616a;
+  --del-soft: #3a2a2c;
+  --warn: #ebcb8b;
+  --warn-soft: #3a3424;
+  --add-border: #a3be8c;
+  --del-border: #bf616a;
+  --warn-border: #ebcb8b;
+  --accent-border: #88c0d0;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #3b4252;
+  --code-add: #a3be8c;
+  --code-del: #bf616a;
+  --viz-add: #a3be8c;
+  --viz-add-ink: #a3be8c;
+  --viz-del: #bf616a;
+  --viz-del-ink: #bf616a;
+  --viz-warn: #ebcb8b;
+  --viz-accent: #88c0d0;
+  --viz-line: #434c5e;
+  --viz-node: #3b4252;
+  --viz-node-stroke: #4c566a;
+  --viz-accent-stroke: #88c0d0;
+  --viz-cell-stroke: #3b4252;
+  --viz-noise: #9aa5b5;
+  --viz-other: #9aa5b5;
+  --viz-cell-label: #eceff4;
+  --viz-zone: #3a2a2c;
+  --kind-e2e: #88c0d0;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="gruvbox"] {
+  --paper: #282828;
+  --surface: #32302f;
+  --surface-2: #3c3836;
+  --ink: #ebdbb2;
+  --ink-soft: #d5c4a1;
+  --muted: #a89984;
+  --line: #3c3836;
+  --line-2: #504945;
+  --accent: #83a598;
+  --accent-soft: #2b3331;
+  --add: #b8bb26;
+  --add-soft: #2f3318;
+  --del: #fb4934;
+  --del-soft: #3a201c;
+  --warn: #fabd2f;
+  --warn-soft: #3a3014;
+  --add-border: #b8bb26;
+  --del-border: #fb4934;
+  --warn-border: #fabd2f;
+  --accent-border: #83a598;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #32302f;
+  --code-add: #b8bb26;
+  --code-del: #fb4934;
+  --viz-add: #b8bb26;
+  --viz-add-ink: #b8bb26;
+  --viz-del: #fb4934;
+  --viz-del-ink: #fb4934;
+  --viz-warn: #fabd2f;
+  --viz-accent: #83a598;
+  --viz-line: #3c3836;
+  --viz-node: #32302f;
+  --viz-node-stroke: #504945;
+  --viz-accent-stroke: #83a598;
+  --viz-cell-stroke: #32302f;
+  --viz-noise: #a89984;
+  --viz-other: #a89984;
+  --viz-cell-label: #ebdbb2;
+  --viz-zone: #3a201c;
+  --kind-e2e: #83a598;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="catppuccin"] {
+  --paper: #1e1e2e;
+  --surface: #313244;
+  --surface-2: #45475a;
+  --ink: #cdd6f4;
+  --ink-soft: #bac2de;
+  --muted: #9399b2;
+  --line: #313244;
+  --line-2: #585b70;
+  --accent: #89b4fa;
+  --accent-soft: #2a2c41;
+  --add: #a6e3a1;
+  --add-soft: #26342a;
+  --del: #f38ba8;
+  --del-soft: #361f2a;
+  --warn: #f9e2af;
+  --warn-soft: #36321f;
+  --add-border: #a6e3a1;
+  --del-border: #f38ba8;
+  --warn-border: #f9e2af;
+  --accent-border: #89b4fa;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #313244;
+  --code-add: #a6e3a1;
+  --code-del: #f38ba8;
+  --viz-add: #a6e3a1;
+  --viz-add-ink: #a6e3a1;
+  --viz-del: #f38ba8;
+  --viz-del-ink: #f38ba8;
+  --viz-warn: #f9e2af;
+  --viz-accent: #89b4fa;
+  --viz-line: #313244;
+  --viz-node: #313244;
+  --viz-node-stroke: #585b70;
+  --viz-accent-stroke: #89b4fa;
+  --viz-cell-stroke: #313244;
+  --viz-noise: #9399b2;
+  --viz-other: #9399b2;
+  --viz-cell-label: #cdd6f4;
+  --viz-zone: #361f2a;
+  --kind-e2e: #89b4fa;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="github"] {
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --ink: #1f2328;
+  --ink-soft: #656d76;
+  --muted: #8c959f;
+  --line: #d0d7de;
+  --line-2: #afb8c1;
+  --accent: #0969da;
+  --accent-soft: #ddf4ff;
+  --add: #1a7f37;
+  --add-soft: #dafbe1;
+  --del: #cf222e;
+  --del-soft: #ffebe9;
+  --warn: #9a6700;
+  --warn-soft: #fff8c5;
+  --add-border: #1a7f37;
+  --del-border: #cf222e;
+  --warn-border: #9a6700;
+  --accent-border: #0969da;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #fff;
+  --glass: #ffffff;
+  --code-add: #1a7f37;
+  --code-del: #cf222e;
+  --viz-add: #1a7f37;
+  --viz-add-ink: #1a7f37;
+  --viz-del: #cf222e;
+  --viz-del-ink: #cf222e;
+  --viz-warn: #9a6700;
+  --viz-accent: #0969da;
+  --viz-line: #d0d7de;
+  --viz-node: #ffffff;
+  --viz-node-stroke: #afb8c1;
+  --viz-accent-stroke: #0969da;
+  --viz-cell-stroke: #ffffff;
+  --viz-noise: #8c959f;
+  --viz-other: #8c959f;
+  --viz-cell-label: #1f2328;
+  --viz-zone: #ffebe9;
+  --kind-e2e: #0969da;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="high-contrast"] {
+  --paper: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f0f0f0;
+  --ink: #000000;
+  --ink-soft: #000000;
+  --muted: #3a3a3a;
+  --line: #000000;
+  --line-2: #000000;
+  --accent: #0000cc;
+  --accent-soft: #e6e6ff;
+  --add: #006400;
+  --add-soft: #e6f5e6;
+  --del: #b00000;
+  --del-soft: #ffe6e6;
+  --warn: #7a4d00;
+  --warn-soft: #fff3e0;
+  --add-border: #006400;
+  --del-border: #b00000;
+  --warn-border: #7a4d00;
+  --accent-border: #0000cc;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #fff;
+  --glass: #ffffff;
+  --code-add: #006400;
+  --code-del: #b00000;
+  --viz-add: #006400;
+  --viz-add-ink: #006400;
+  --viz-del: #b00000;
+  --viz-del-ink: #b00000;
+  --viz-warn: #7a4d00;
+  --viz-accent: #0000cc;
+  --viz-line: #000000;
+  --viz-node: #ffffff;
+  --viz-node-stroke: #000000;
+  --viz-accent-stroke: #0000cc;
+  --viz-cell-stroke: #ffffff;
+  --viz-noise: #3a3a3a;
+  --viz-other: #3a3a3a;
+  --viz-cell-label: #000000;
+  --viz-zone: #ffe6e6;
+  --kind-e2e: #0000cc;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="blueprint"] {
+  --paper: #0d2747;
+  --surface: #123257;
+  --surface-2: #16395f;
+  --ink: #dbeafe;
+  --ink-soft: #a9c7ee;
+  --muted: #6f93c0;
+  --line: #1d4373;
+  --line-2: #2a558c;
+  --accent: #5ad1ff;
+  --accent-soft: #0e2c4d;
+  --add: #5ee0a0;
+  --add-soft: #103a2c;
+  --del: #ff8a8a;
+  --del-soft: #3a1d22;
+  --warn: #ffd166;
+  --warn-soft: #33301a;
+  --add-border: #5ee0a0;
+  --del-border: #ff8a8a;
+  --warn-border: #ffd166;
+  --accent-border: #5ad1ff;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #123257;
+  --code-add: #5ee0a0;
+  --code-del: #ff8a8a;
+  --viz-add: #5ee0a0;
+  --viz-add-ink: #5ee0a0;
+  --viz-del: #ff8a8a;
+  --viz-del-ink: #ff8a8a;
+  --viz-warn: #ffd166;
+  --viz-accent: #5ad1ff;
+  --viz-line: #1d4373;
+  --viz-node: #123257;
+  --viz-node-stroke: #2a558c;
+  --viz-accent-stroke: #5ad1ff;
+  --viz-cell-stroke: #123257;
+  --viz-noise: #6f93c0;
+  --viz-other: #6f93c0;
+  --viz-cell-label: #dbeafe;
+  --viz-zone: #3a1d22;
+  --kind-e2e: #5ad1ff;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="newsprint"] {
+  --paper: #f7f5ef;
+  --surface: #ffffff;
+  --surface-2: #ece9e1;
+  --ink: #111111;
+  --ink-soft: #333333;
+  --muted: #6b6b6b;
+  --line: #cfcabf;
+  --line-2: #b3ada0;
+  --accent: #8a1f11;
+  --accent-soft: #f1e3e0;
+  --add: #1a6b34;
+  --add-soft: #e6f0e8;
+  --del: #a31d12;
+  --del-soft: #f6e3e0;
+  --warn: #8a6400;
+  --warn-soft: #f1ead4;
+  --add-border: #1a6b34;
+  --del-border: #a31d12;
+  --warn-border: #8a6400;
+  --accent-border: #8a1f11;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #fff;
+  --glass: #ffffff;
+  --code-add: #1a6b34;
+  --code-del: #a31d12;
+  --viz-add: #1a6b34;
+  --viz-add-ink: #1a6b34;
+  --viz-del: #a31d12;
+  --viz-del-ink: #a31d12;
+  --viz-warn: #8a6400;
+  --viz-accent: #8a1f11;
+  --viz-line: #cfcabf;
+  --viz-node: #ffffff;
+  --viz-node-stroke: #b3ada0;
+  --viz-accent-stroke: #8a1f11;
+  --viz-cell-stroke: #ffffff;
+  --viz-noise: #6b6b6b;
+  --viz-other: #6b6b6b;
+  --viz-cell-label: #111111;
+  --viz-zone: #f6e3e0;
+  --kind-e2e: #8a1f11;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+  --sans: Iowan Old Style, Georgia, "Times New Roman", Times, serif;
+}
+[data-theme="sepia"] {
+  --paper: #e9dcc3;
+  --surface: #f3e9d6;
+  --surface-2: #ddcfb2;
+  --ink: #4a3b28;
+  --ink-soft: #5f4d34;
+  --muted: #776344;
+  --line: #d4c4a3;
+  --line-2: #c4b08a;
+  --accent: #8a5a2b;
+  --accent-soft: #ead9bf;
+  --add: #4f5e24;
+  --add-soft: #dfe0bf;
+  --del: #9c3b28;
+  --del-soft: #ecd5cc;
+  --warn: #7e5e22;
+  --warn-soft: #ece0c0;
+  --add-border: #4f5e24;
+  --del-border: #9c3b28;
+  --warn-border: #7e5e22;
+  --accent-border: #8a5a2b;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #fff;
+  --glass: #f3e9d6;
+  --code-add: #4f5e24;
+  --code-del: #9c3b28;
+  --viz-add: #4f5e24;
+  --viz-add-ink: #4f5e24;
+  --viz-del: #9c3b28;
+  --viz-del-ink: #9c3b28;
+  --viz-warn: #7e5e22;
+  --viz-accent: #8a5a2b;
+  --viz-line: #d4c4a3;
+  --viz-node: #f3e9d6;
+  --viz-node-stroke: #c4b08a;
+  --viz-accent-stroke: #8a5a2b;
+  --viz-cell-stroke: #f3e9d6;
+  --viz-noise: #776344;
+  --viz-other: #776344;
+  --viz-cell-label: #4a3b28;
+  --viz-zone: #ecd5cc;
+  --kind-e2e: #8a5a2b;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+[data-theme="synthwave"] {
+  --paper: #1a1033;
+  --surface: #251447;
+  --surface-2: #2f1a57;
+  --ink: #f6e6ff;
+  --ink-soft: #d3b8f0;
+  --muted: #9a7fc0;
+  --line: #3a2470;
+  --line-2: #4d2f8f;
+  --accent: #ff5fd2;
+  --accent-soft: #2e1450;
+  --add: #36f9c5;
+  --add-soft: #0e3a32;
+  --del: #ff5f6d;
+  --del-soft: #3a1622;
+  --warn: #ffd23f;
+  --warn-soft: #332a10;
+  --add-border: #36f9c5;
+  --del-border: #ff5f6d;
+  --warn-border: #ffd23f;
+  --accent-border: #ff5fd2;
+  --accent-shadow: rgba(0,0,0,.2);
+  --on-accent: #000;
+  --glass: #251447;
+  --code-add: #36f9c5;
+  --code-del: #ff5f6d;
+  --viz-add: #36f9c5;
+  --viz-add-ink: #36f9c5;
+  --viz-del: #ff5f6d;
+  --viz-del-ink: #ff5f6d;
+  --viz-warn: #ffd23f;
+  --viz-accent: #ff5fd2;
+  --viz-line: #3a2470;
+  --viz-node: #251447;
+  --viz-node-stroke: #4d2f8f;
+  --viz-accent-stroke: #ff5fd2;
+  --viz-cell-stroke: #251447;
+  --viz-noise: #9a7fc0;
+  --viz-other: #9a7fc0;
+  --viz-cell-label: #f6e6ff;
+  --viz-zone: #3a1622;
+  --kind-e2e: #ff5fd2;
+  --viz-s1: #5b7db1;
+  --viz-s2: #5fa389;
+  --viz-s3: #b08a5a;
+  --viz-s4: #a07ba6;
+  --viz-s5: #c47d72;
+  --viz-s6: #7fa86a;
+  --viz-s7: #d0a85a;
+  --viz-s8: #7a93b8;
+}
+</style>
+</head>
+<body>
+<script>
+  (function () {
+    var KEY = "review-intent:theme";
+    var root = document.documentElement;
+    function applyId(id) {
+      if (!id || id === "paper") delete root.dataset.theme;
+      else root.dataset.theme = id;
+    }
+    var saved;
+    try { saved = localStorage.getItem(KEY); } catch (e) {}
+    applyId(saved);
+    document.addEventListener("DOMContentLoaded", function () {
+      var gear = document.querySelector(".tb-gear");
+      var menu = document.querySelector(".theme-menu");
+      if (!gear || !menu) return;
+      var current = saved || "paper";
+      function mark() {
+        menu.querySelectorAll(".theme-opt").forEach(function (o) {
+          o.setAttribute("aria-checked", o.getAttribute("data-theme-id") === current ? "true" : "false");
+        });
+      }
+      function open(v) {
+        menu.hidden = !v;
+        gear.setAttribute("aria-expanded", v ? "true" : "false");
+      }
+      mark();
+      gear.addEventListener("click", function (e) {
+        e.stopPropagation();
+        open(menu.hidden);
+      });
+      menu.querySelectorAll(".theme-opt").forEach(function (o) {
+        o.addEventListener("click", function () {
+          current = o.getAttribute("data-theme-id");
+          applyId(current);
+          try { localStorage.setItem(KEY, current); } catch (e) {}
+          mark();
+          open(false);
+        });
+      });
+      document.addEventListener("click", function (e) {
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== gear) open(false);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") open(false);
+      });
+    });
+  })();
+</script>
+<div class="topbar">
+  <span class="tb-title">Add intent-coverage gate and blast-radius visuals</span>
+  <span class="tb-progress" data-total="7">0 / 7 reviewed</span>
+  <button class="tb-tour" type="button">▶ Guided review</button>
+  <a class="tb-top" href="#top">↑ Top</a>
+  <div class="tb-theme">
+    <button class="tb-gear" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Change theme" title="Change theme">⚙</button>
+    <div class="theme-menu" role="menu" aria-label="Theme" hidden>
+      <button type="button" class="theme-opt" role="menuitemradio" aria-checked="true" data-theme-id="paper">Paper (default)</button>
+      <div class="theme-grp"><div class="theme-grp-h">Playful</div><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="dark">Dark</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="hacker">Hacker</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="synthwave">Synthwave</button></div><div class="theme-grp"><div class="theme-grp-h">Dev favorites</div><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="solarized-light">Solarized Light</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="solarized-dark">Solarized Dark</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="nord">Nord</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="gruvbox">Gruvbox</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="catppuccin">Catppuccin</button></div><div class="theme-grp"><div class="theme-grp-h">Professional</div><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="github">GitHub</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="high-contrast">High Contrast</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="blueprint">Blueprint</button></div><div class="theme-grp"><div class="theme-grp-h">Editorial</div><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="newsprint">Newsprint</button><button type="button" class="theme-opt" role="menuitemradio" aria-checked="false" data-theme-id="sepia">Sepia</button></div>
+    </div>
+  </div>
+</div>
+<header class="page-head" id="top">
+  <div class="eyebrow">Intent review <span class="eyebrow-diff">main…HEAD</span></div>
+  <h1>Add intent-coverage gate and blast-radius visuals</h1>
+  <div class="tldr"><p>Adds 10 measured metrics and 5 SVG visualizations to the review page.</p></div>
+  <details class="overall-wrap">
+    <summary>Full summary</summary>
+    <div class="overall"><p>This change set extends the <strong>scorecard</strong> and adds a visual summary. Rejected a charting dependency in favour of pure inline SVG so <code>render.ts</code> stays deterministic.</p></div>
+  </details>
+</header>
+
+
+<div class="layout">
+<aside class="rail" id="rail" aria-label="Pinned blocks"></aside>
+<div class="content">
+<div class="movable" data-movable="vitals"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="vitals" aria-label="Change vitals">
+  <div class="vital">
+    <span class="vital-num">7</span>
+    <span class="vital-lbl">files</span>
+  </div>
+  <div class="vital">
+    <span class="vital-num">+320 −96</span>
+    <span class="vital-lbl">net +224 lines</span>
+  </div>
+  <div class="vital">
+    <span class="vital-num">14</span>
+    <span class="vital-lbl">hunks</span>
+  </div>
+  <div class="vital vital-warn">
+    <span class="vital-num">71%</span>
+    <span class="vital-lbl">intent covered</span>
+  </div>
+  <div class="vital">
+    <span class="vital-num">1</span>
+    <span class="vital-lbl">risk declared</span>
+  </div>
+  <div class="vital vital-del">
+    <span class="vital-num">21</span>
+    <span class="vital-lbl">max complexity</span>
+  </div>
+  <div class="vital">
+    <span class="vital-num">5</span>
+    <span class="vital-lbl">dependents</span>
+  </div>
+</section></div>
+
+<div class="movable" data-movable="review-first"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="review-first">
+  <h2>Review first</h2>
+  <div class="rf-cards"><a class="rf-card" href="#file-0">
+      <span class="rf-rank">#1</span>
+      <code class="rf-path">src/render.ts</code>
+      <span class="rf-reasons"><span>240 lines</span><span>imported by 2</span><span>CCN 18</span></span>
+    </a><a class="rf-card" href="#file-1">
+      <span class="rf-rank">#2</span>
+      <code class="rf-path">src/scorecard.ts</code>
+      <span class="rf-reasons"><span>46 lines</span><span>imported by 3</span><span>CCN 21</span></span>
+    </a><a class="rf-card" href="#file-4">
+      <span class="rf-rank">#3</span>
+      <code class="rf-path">test/render.test.ts</code>
+      <span class="rf-reasons"><span>40 lines</span></span>
+    </a></div>
+</section></div>
+
+<div class="movable" data-movable="file-index"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><nav class="file-index" aria-label="Changed files">
+  <h2>Files <span class="muted fi-count">7 changed · review-ordered</span></h2>
+  <ol class="fi-list">
+  <li class="fi-row">
+    <a class="fi-link" href="#file-0">
+      <span class="fi-rank">#1</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">src/render.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+200 −40</span>
+        <span class="fi-reach" title="dependents (reach)">→ 2</span>
+        <span class="fi-hot" title="complexity hotspot">CCN 18</span>
+        
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-1">
+      <span class="fi-rank">#2</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">src/scorecard.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+40 −6</span>
+        <span class="fi-reach" title="dependents (reach)">→ 3</span>
+        <span class="fi-hot" title="complexity hotspot">CCN 21</span>
+        
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-4">
+      <span class="fi-rank">#3</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">test/render.test.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+40 −0</span>
+        
+        
+        
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-2">
+      <span class="fi-rank">#4</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">src/types.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+30 −4</span>
+        
+        
+        
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-3">
+      <span class="fi-rank">#5</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">src/match.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+18 −2</span>
+        
+        
+        
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-5">
+      <span class="fi-rank">#6</span>
+      <span class="status status-modified">modified</span>
+      <code class="fi-path">package-lock.json</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+0 −44</span>
+        
+        
+        <span class="fi-gap" title="unexplained change">⚠</span>
+      </span>
+    </a>
+  </li>
+  <li class="fi-row">
+    <a class="fi-link" href="#file-6">
+      <span class="fi-rank">#7</span>
+      <span class="status status-deleted">deleted</span>
+      <code class="fi-path">src/legacy.ts</code>
+      <span class="fi-sig">
+        <span class="fi-churn" title="± lines">+0 −0</span>
+        
+        
+        
+      </span>
+    </a>
+  </li>
+  </ol>
+</nav></div>
+
+<div class="movable" data-movable="blast"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="blast">
+  <details class="band" open>
+    <summary class="band-head"><h2>Blast radius</h2></summary>
+    <div class="band-body">
+      <div class="blast-grid">
+        <div class="card scorecard">
+  <h3>Surface area <span class="src">measured</span></h3>
+  <div class="metrics">
+    <span><b>7</b> files <span class="muted">(4 modified, 2 added, 1 deleted)</span></span>
+    <span><b>14</b> hunks</span>
+    <span class="add">+320</span>
+    <span class="del">−96</span>
+    <span><b>1</b> test / <b>5</b> code files</span>
+  </div>
+  <div class="metrics metrics-extra"><span>net +224 lines</span><span>40 test / 360 code lines</span><span>2.0 hunks/file</span><span>2 new files</span><span>5 dependents <span class="muted">(reach)</span></span><span>intent: 5/7 files · 10/14 hunks</span><span>diagrams: class</span><span class="flag">3 debt/debug markers added</span><span class="flag">1 noise file</span><span>largest: <code>src/render.ts</code> ±240</span><span class="flag">max CCN 21 · 2 hotspots ≥ 15</span></div>
+  <div class="badges"><span class="badge tone-warn">large change set</span><span class="badge tone-danger">touches dependencies</span></div>
+</div>
+        <div class="card risks">
+  <h3>Risk ledger <span class="src">claimed</span></h3>
+  <table class="risk-table">
+    <thead><tr><th>Assumption</th><th>If false</th><th>How you'd know</th></tr></thead>
+    <tbody><tr>
+    <td><p>Diff line counts approximate churn well</p></td>
+    <td><p>Treemap areas mislead</p></td>
+    <td><p>Compare with git --stat</p></td>
+  </tr></tbody>
+  </table>
+</div>
+      </div>
+      <div class="card reach zoomable">
+  <h3>Reach <span class="src">measured · heuristic</span></h3>
+  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
+  <svg class="viz-ripple" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet" role="img">
+  <circle cx="360" cy="210" r="155" class="ripple-ring" /><circle cx="360" cy="210" r="80" class="ripple-ring" /><line x1="360.0" y1="60.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="360.0" y1="60.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="550.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="360.0" y1="360.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="170.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><g class="ripple-node">
+  <title>src/cli.ts — imports a changed file</title>
+  <circle cx="360.0" cy="60.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="76.0" text-anchor="middle" class="ripple-label">src/cli.ts</text>
+</g><g class="ripple-node">
+  <title>src/match.ts — imports a changed file</title>
+  <circle cx="550.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="550.0" y="226.0" text-anchor="middle" class="ripple-label">src/match.ts</text>
+</g><g class="ripple-node">
+  <title>test/render.test.ts — imports a changed file</title>
+  <circle cx="360.0" cy="360.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="376.0" text-anchor="middle" class="ripple-label">test/render.test.ts</text>
+</g><g class="ripple-node">
+  <title>test/scorecard.test.ts — imports a changed file</title>
+  <circle cx="170.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="170.0" y="226.0" text-anchor="middle" class="ripple-label">test/scorecard.test.ts</text>
+</g><g class="ripple-node">
+  <title>src/render.ts — changed file</title>
+  <circle cx="360.0" cy="146.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="133.0" text-anchor="middle" class="ripple-label">src/render.ts</text>
+</g><g class="ripple-node">
+  <title>src/scorecard.ts — changed file</title>
+  <circle cx="360.0" cy="274.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="261.0" text-anchor="middle" class="ripple-label">src/scorecard.ts</text>
+</g>
+</svg>
+  
+</div>
+    </div>
+  </details>
+</section></div>
+
+<div class="movable" data-movable="visuals"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="visuals">
+  <details class="band">
+    <summary class="band-head"><h2>Visual summary <span class="src">measured</span></h2></summary>
+    <div class="band-body">
+      <div class="viz-grid">
+        <div class="card viz viz-span zoomable">
+  <h3>Diff mass <span class="src">± lines per file</span></h3>
+  <svg class="viz-diffmass" viewBox="0 0 720 152" preserveAspectRatio="xMidYMid meet" role="img">
+    <line x1="417" y1="10" x2="417" y2="142" class="viz-axis" />
+    <g><title>src/render.ts — +200 −40 (code)</title><circle cx="9" cy="21" r="3" fill="var(--viz-add)" />
+    <text x="18" y="24" class="viz-label" fill="var(--viz-accent)">src/render.ts</text>
+    <rect x="374.4" y="14" width="42.6" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="14" width="213.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="24" class="viz-num">+200 −40</text></g>
+    <g><title>src/scorecard.ts — +40 −6 (code)</title><circle cx="9" cy="43" r="3" fill="var(--viz-add)" />
+    <text x="18" y="46" class="viz-label" fill="var(--viz-accent)">src/scorecard.ts</text>
+    <rect x="410.6" y="36" width="6.4" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="36" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="46" class="viz-num">+40 −6</text></g>
+    <g><title>package-lock.json — +0 −44 (noise) · no intent written</title><circle cx="9" cy="65" r="3" fill="none" stroke="var(--viz-del)" stroke-width="1.5" />
+    <text x="18" y="68" class="viz-label" fill="var(--viz-noise)">package-lock.json</text>
+    <rect x="370.1" y="58" width="46.9" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="58" width="0.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="68" class="viz-num">+0 −44</text></g>
+    <g><title>test/render.test.ts — +40 −0 (test)</title><circle cx="9" cy="87" r="3" fill="var(--viz-add)" />
+    <text x="18" y="90" class="viz-label" fill="var(--viz-add-ink)">test/render.test.ts</text>
+    <rect x="417.0" y="80" width="0.0" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="80" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="90" class="viz-num">+40 −0</text></g>
+    <g><title>src/types.ts — +30 −4 (code)</title><circle cx="9" cy="109" r="3" fill="var(--viz-add)" />
+    <text x="18" y="112" class="viz-label" fill="var(--viz-accent)">src/types.ts</text>
+    <rect x="412.7" y="102" width="4.3" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="102" width="31.9" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="112" class="viz-num">+30 −4</text></g>
+    <g><title>src/match.ts — +18 −2 (code)</title><circle cx="9" cy="131" r="3" fill="var(--viz-add)" />
+    <text x="18" y="134" class="viz-label" fill="var(--viz-accent)">src/match.ts</text>
+    <rect x="414.9" y="124" width="2.1" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="124" width="19.2" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="134" class="viz-num">+18 −2</text></g>
+  </svg>
+  <p class="viz-cap">One row per changed file, longest diff first: bar length = lines added (green, right) vs removed (red, left). The dot is filled ● when intent was written for the file, hollow ○ when it wasn't. Hover a row for its path and counts.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Change treemap <span class="src">area = churn</span></h3>
+  <svg class="viz-treemap" viewBox="0 0 720 300" preserveAspectRatio="none" role="img">
+    <g><title>src/render.ts — 240 lines changed</title><rect x="0.0" y="0.0" width="407.5" height="300.0" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="5.0" y="15.0" class="viz-cell-label">render.ts</text></g>
+    <g><title>src/scorecard.ts — 46 lines changed</title><rect x="407.5" y="0.0" width="152.8" height="153.3" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="412.5" y="15.0" class="viz-cell-label">scorecard.ts</text></g>
+    <g><title>package-lock.json — 44 lines changed · no intent written</title><rect x="407.5" y="153.3" width="152.8" height="146.7" fill="var(--viz-s8)" fill-opacity="0.82" stroke="var(--viz-del-ink)" stroke-width="2" /><text x="412.5" y="168.3" class="viz-cell-label">package-lock.json</text></g>
+    <g><title>test/render.test.ts — 40 lines changed</title><rect x="560.4" y="0.0" width="159.6" height="127.7" fill="var(--viz-s3)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="15.0" class="viz-cell-label">render.test.ts</text></g>
+    <g><title>src/types.ts — 34 lines changed</title><rect x="560.4" y="127.7" width="159.6" height="108.5" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="142.7" class="viz-cell-label">types.ts</text></g>
+    <g><title>src/match.ts — 20 lines changed</title><rect x="560.4" y="236.2" width="159.6" height="63.8" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="251.2" class="viz-cell-label">match.ts</text></g>
+  </svg>
+  <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>
+  <svg class="viz-complexity" viewBox="0 0 720 68" preserveAspectRatio="xMidYMid meet" role="img">
+    <g><title>buildScorecard — CCN 21 (threshold 15) at src/scorecard.ts:31</title><text x="6" y="25" class="viz-label">buildScorecard · scorecard.ts:31</text>
+    <rect x="300" y="14" width="360.0" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="666.0" y="25" class="viz-num">21</text></g>
+    <g><title>renderScorecard — CCN 18 (threshold 15) at src/render.ts:60</title><text x="6" y="49" class="viz-label">renderScorecard · render.ts:60</text>
+    <rect x="300" y="38" width="308.6" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="614.6" y="49" class="viz-num">18</text></g>
+  </svg>
+  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of 15; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
+</div>
+    <div class="card viz zoomable">
+  <h3>Intent coverage <span class="src">measured</span></h3>
+  <div class="viz-rings">
+    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
+  <title>5 of 7 files carry intent (71%)</title>
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
+  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
+  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">files 5/7</text>
+</svg>
+    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
+  <title>10 of 14 hunks carry intent (71%)</title>
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
+  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
+  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">hunks 10/14</text>
+</svg>
+  </div>
+  <p class="viz-cap">Share of changed files (each needs a what + why) and diff hunks (each needs an anchored note) that carry agent-written intent. The completeness gate normally forces both to 100% — anything lower means the page was rendered with <code>--allow-gaps</code> and some of the change is unexplained.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Change map <span class="src">per file · measured</span></h3>
+  <svg class="viz-scatter" viewBox="0 0 720 380" preserveAspectRatio="xMidYMid meet" role="img">
+    <rect x="378" y="22" width="324" height="156" class="viz-danger" />
+    <line x1="54" y1="178" x2="702" y2="178" class="viz-axis" />
+    <line x1="378" y1="22" x2="378" y2="334" class="viz-axis" />
+    <line x1="54" y1="22" x2="54" y2="334" stroke="var(--viz-line)" />
+    <line x1="54" y1="334" x2="702" y2="334" stroke="var(--viz-line)" />
+    <text x="702" y="358" text-anchor="end" class="viz-axis-label">downstream reach →</text>
+    <text x="46" y="14" class="viz-axis-label">↑ churn (± lines)</text>
+    <text x="386" y="38" class="viz-axis-label viz-danger-label">high churn · high reach — review first</text>
+    <circle cx="583.0" cy="22.0" r="14.0" class="viz-dot viz-dot-hot"><title>src/render.ts — 240 lines changed · 1 hunk · imported by 2 files · complexity hotspot</title></circle>
+    <circle cx="686.0" cy="197.4" r="14.0" class="viz-dot viz-dot-hot"><title>src/scorecard.ts — 46 lines changed · 1 hunk · imported by 3 files · complexity hotspot</title></circle>
+    <circle cx="102.0" cy="216.6" r="14.0" class="viz-dot"><title>src/types.ts — 34 lines changed · 1 hunk · imported by 0 files</title></circle>
+    <circle cx="70.0" cy="243.9" r="14.0" class="viz-dot"><title>src/match.ts — 20 lines changed · 1 hunk · imported by 0 files</title></circle>
+    <circle cx="134.0" cy="206.6" r="14.0" class="viz-dot"><title>test/render.test.ts — 40 lines changed · 1 hunk · imported by 0 files</title></circle>
+    <circle cx="166.0" cy="200.4" r="14.0" class="viz-dot"><title>package-lock.json — 44 lines changed · 1 hunk · imported by 0 files</title></circle>
+    <text x="565.0" y="25.0" text-anchor="end" class="viz-label">render.ts</text>
+    <text x="668.0" y="200.4" text-anchor="end" class="viz-label">scorecard.ts</text>
+    <text x="184.0" y="203.4" class="viz-label">package-lock.json</text>
+    <text x="152.0" y="216.4" class="viz-label">render.test.ts</text>
+    <text x="120.0" y="229.4" class="viz-label">types.ts</text>
+    <text x="88.0" y="246.9" class="viz-label">match.ts</text>
+  </svg>
+  <div class="viz-legend">
+    <span class="viz-lg"><svg class="viz-lg-dot" viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="5" class="viz-dot" /></svg>no hotspot</span>
+    <span class="viz-lg"><svg class="viz-lg-dot" viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="5" class="viz-dot viz-dot-hot" /></svg>complexity hotspot (CCN ≥ 15)</span>
+    <span class="viz-lg"><svg class="viz-lg-dot" viewBox="0 0 36 14" width="34" height="13" aria-hidden="true"><circle cx="5" cy="7" r="3" class="viz-dot" /><circle cx="26" cy="7" r="6" class="viz-dot" /></svg>more hunks → bigger dot</span>
+    <span class="viz-lg"><span class="viz-lg-zone"></span>review-first zone</span>
+  </div>
+  <p class="viz-cap">Each dot is one changed file, placed by how far it reaches — repo files that import it (x) — against how much it changed in lines (y). The further toward the top-right, the more it warrants a close read. Hover a dot for its exact numbers.</p>
+</div>
+      </div>
+    </div>
+  </details>
+</section></div>
+
+<div class="movable" data-movable="tests"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="tests">
+  <details class="band">
+    <summary class="band-head"><h2>Tests <span class="src">claimed</span> <span class="muted test-count">5 cases described</span></h2></summary>
+    <div class="band-body">
+      <div class="test-group" style="--k:var(--viz-add-ink)">
+      <h4 class="test-kind">unit</h4>
+      <ul class="test-list">
+      <li class="test-case"><p>An empty diff renders a valid page but omits the churn-driven charts.</p> <code class="test-name">omits churn charts on empty diff</code></li>
+      <li class="test-case"><p>The treemap places one rectangle per changed file, sized by its ± lines.</p> <code class="test-name">treemap labels each file</code></li>
+      <li class="test-case"><p>A note whose anchor lands in no hunk still shows, under 'not matched'.</p></li>
+      </ul>
+    </div>
+    <div class="test-group" style="--k:var(--kind-e2e)">
+      <h4 class="test-kind">e2e</h4>
+      <ul class="test-list">
+      <li class="test-case"><p>Rendering a real branch opens the page with every section populated.</p></li>
+      </ul>
+    </div>
+    <div class="test-group" style="--k:var(--viz-warn)">
+      <h4 class="test-kind">manual</h4>
+      <ul class="test-list">
+      <li class="test-case"><p>Eyeball sample-output.html in a browser to confirm the visuals read well.</p></li>
+      </ul>
+    </div>
+    </div>
+  </details>
+</section></div>
+
+<div class="movable" data-movable="diagrams"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button><section class="diagrams">
+  <details class="band">
+    <summary class="band-head"><h2>Diagrams</h2></summary>
+    <div class="band-body">
+      <div class="diagram-grid">
+<section class="diagram zoomable">
+  <h2>Class diagram</h2>
+  <pre class="mermaid">classDiagram
+  Scorecard &lt;|-- Visuals</pre>
+</section>
+
+      </div>
+    </div>
+  </details>
+</section></div>
+
+<main>
+  <details class="file" id="file-0" open>
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">src/render.ts</code>
+    <span class="file-rank" title="review priority">#1</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+200 −40</span><span class="fbadge fbadge-reach" title="repo files importing this one (reach)">→ 2</span><span class="fbadge fbadge-hot" title="measured cyclomatic complexity hotspot">CCN 18</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Add the visual-summary section and ripple.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-0" data-ref="src/render.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-0" data-ref="src/render.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,40 +1,200 @@</div>
+    <table class="diff"><tr class="ln ln-del">
+  <td class="num">1</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 0</td>
+</tr><tr class="ln ln-del">
+  <td class="num">2</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 1</td>
+</tr><tr class="ln ln-del">
+  <td class="num">3</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 2</td>
+</tr><tr class="ln ln-del">
+  <td class="num">4</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 3</td>
+</tr><tr class="ln ln-del">
+  <td class="num">5</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 4</td>
+</tr><tr class="ln ln-del">
+  <td class="num">6</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 5</td>
+</tr><tr class="ln ln-del">
+  <td class="num">7</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 6</td>
+</tr><tr class="ln ln-del">
+  <td class="num">8</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 7</td>
+</tr><tr class="ln ln-del">
+  <td class="num">9</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 8</td>
+</tr><tr class="ln ln-del">
+  <td class="num">10</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 9</td>
+</tr><tr class="ln ln-del">
+  <td class="num">11</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 10</td>
+</tr><tr class="ln ln-del">
+  <td class="num">12</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 11</td>
+</tr><tr class="ln ln-del">
+  <td class="num">13</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 12</td>
+</tr><tr class="ln ln-del">
+  <td class="num">14</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 13</td>
+</tr><tr class="ln ln-del">
+  <td class="num">15</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 14</td>
+</tr><tr class="ln ln-del">
+  <td class="num">16</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 15</td>
+</tr><tr class="ln ln-del">
+  <td class="num">17</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 16</td>
+</tr><tr class="ln ln-del">
+  <td class="num">18</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 17</td>
+</tr><tr class="ln ln-del">
+  <td class="num">19</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 18</td>
+</tr><tr class="ln ln-del">
+  <td class="num">20</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 19</td>
+</tr><tr class="ln ln-del">
+  <td class="num">21</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 20</td>
+</tr><tr class="ln ln-del">
+  <td class="num">22</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 21</td>
+</tr><tr class="ln ln-del">
+  <td class="num">23</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 22</td>
+</tr><tr class="ln ln-del">
+  <td class="num">24</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 23</td>
+</tr><tr class="ln ln-del">
+  <td class="num">25</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 24</td>
+</tr><tr class="ln ln-del">
+  <td class="num">26</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 25</td>
+</tr><tr class="ln ln-del">
+  <td class="num">27</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 26</td>
+</tr><tr class="ln ln-del">
+  <td class="num">28</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 27</td>
+</tr><tr class="ln ln-del">
+  <td class="num">29</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 28</td>
+</tr><tr class="ln ln-del">
+  <td class="num">30</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 29</td>
+</tr><tr class="ln ln-del">
+  <td class="num">31</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 30</td>
+</tr><tr class="ln ln-del">
+  <td class="num">32</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 31</td>
+</tr><tr class="ln ln-del">
+  <td class="num">33</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 32</td>
+</tr><tr class="ln ln-del">
+  <td class="num">34</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 33</td>
+</tr><tr class="ln ln-del">
+  <td class="num">35</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 34</td>
+</tr><tr class="ln ln-del">
+  <td class="num">36</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 35</td>
+</tr><tr class="ln ln-del">
+  <td class="num">37</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 36</td>
+</tr><tr class="ln ln-del">
+  <td class="num">38</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 37</td>
+</tr><tr class="ln ln-del">
+  <td class="num">39</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 38</td>
+</tr><tr class="ln ln-del">
+  <td class="num">40</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 39</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">1</td>
+  <td class="sign">+</td>
+  <td class="code">new 0</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">2</td>
+  <td class="sign">+</td>
+  <td class="code">new 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">3</td>
+  <td class="sign">+</td>
+  <td class="code">new 2</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">4</td>
+  <td class="sign">+</td>
+  <td class="code">new 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">5</td>
+  <td class="sign">+</td>
+  <td class="code">new 4</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">6</td>
+  <td class="sign">+</td>
+  <td class="code">new 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">7</td>
+  <td class="sign">+</td>
+  <td class="code">new 6</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">8</td>
+  <td class="sign">+</td>
+  <td class="code">new 7</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">9</td>
+  <td class="sign">+</td>
+  <td class="code">new 8</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">10</td>
+  <td class="sign">+</td>
+  <td class="code">new 9</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">11</td>
+  <td class="sign">+</td>
+  <td class="code">new 10</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">12</td>
+  <td class="sign">+</td>
+  <td class="code">new 11</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">13</td>
+  <td class="sign">+</td>
+  <td class="code">new 12</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">14</td>
+  <td class="sign">+</td>
+  <td class="code">new 13</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">15</td>
+  <td class="sign">+</td>
+  <td class="code">new 14</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">16</td>
+  <td class="sign">+</td>
+  <td class="code">new 15</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">17</td>
+  <td class="sign">+</td>
+  <td class="code">new 16</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">18</td>
+  <td class="sign">+</td>
+  <td class="code">new 17</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">19</td>
+  <td class="sign">+</td>
+  <td class="code">new 18</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">20</td>
+  <td class="sign">+</td>
+  <td class="code">new 19</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">21</td>
+  <td class="sign">+</td>
+  <td class="code">new 20</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">22</td>
+  <td class="sign">+</td>
+  <td class="code">new 21</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">23</td>
+  <td class="sign">+</td>
+  <td class="code">new 22</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">24</td>
+  <td class="sign">+</td>
+  <td class="code">new 23</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">25</td>
+  <td class="sign">+</td>
+  <td class="code">new 24</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">26</td>
+  <td class="sign">+</td>
+  <td class="code">new 25</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">27</td>
+  <td class="sign">+</td>
+  <td class="code">new 26</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">28</td>
+  <td class="sign">+</td>
+  <td class="code">new 27</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">29</td>
+  <td class="sign">+</td>
+  <td class="code">new 28</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">30</td>
+  <td class="sign">+</td>
+  <td class="code">new 29</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">31</td>
+  <td class="sign">+</td>
+  <td class="code">new 30</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">32</td>
+  <td class="sign">+</td>
+  <td class="code">new 31</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">33</td>
+  <td class="sign">+</td>
+  <td class="code">new 32</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">34</td>
+  <td class="sign">+</td>
+  <td class="code">new 33</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">35</td>
+  <td class="sign">+</td>
+  <td class="code">new 34</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">36</td>
+  <td class="sign">+</td>
+  <td class="code">new 35</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">37</td>
+  <td class="sign">+</td>
+  <td class="code">new 36</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">38</td>
+  <td class="sign">+</td>
+  <td class="code">new 37</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">39</td>
+  <td class="sign">+</td>
+  <td class="code">new 38</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">40</td>
+  <td class="sign">+</td>
+  <td class="code">new 39</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">41</td>
+  <td class="sign">+</td>
+  <td class="code">new 40</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">42</td>
+  <td class="sign">+</td>
+  <td class="code">new 41</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">43</td>
+  <td class="sign">+</td>
+  <td class="code">new 42</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">44</td>
+  <td class="sign">+</td>
+  <td class="code">new 43</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">45</td>
+  <td class="sign">+</td>
+  <td class="code">new 44</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">46</td>
+  <td class="sign">+</td>
+  <td class="code">new 45</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">47</td>
+  <td class="sign">+</td>
+  <td class="code">new 46</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">48</td>
+  <td class="sign">+</td>
+  <td class="code">new 47</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">49</td>
+  <td class="sign">+</td>
+  <td class="code">new 48</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">50</td>
+  <td class="sign">+</td>
+  <td class="code">new 49</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">51</td>
+  <td class="sign">+</td>
+  <td class="code">new 50</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">52</td>
+  <td class="sign">+</td>
+  <td class="code">new 51</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">53</td>
+  <td class="sign">+</td>
+  <td class="code">new 52</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">54</td>
+  <td class="sign">+</td>
+  <td class="code">new 53</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">55</td>
+  <td class="sign">+</td>
+  <td class="code">new 54</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">56</td>
+  <td class="sign">+</td>
+  <td class="code">new 55</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">57</td>
+  <td class="sign">+</td>
+  <td class="code">new 56</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">58</td>
+  <td class="sign">+</td>
+  <td class="code">new 57</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">59</td>
+  <td class="sign">+</td>
+  <td class="code">new 58</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">60</td>
+  <td class="sign">+</td>
+  <td class="code">new 59</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">61</td>
+  <td class="sign">+</td>
+  <td class="code">new 60</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">62</td>
+  <td class="sign">+</td>
+  <td class="code">new 61</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">63</td>
+  <td class="sign">+</td>
+  <td class="code">new 62</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">64</td>
+  <td class="sign">+</td>
+  <td class="code">new 63</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">65</td>
+  <td class="sign">+</td>
+  <td class="code">new 64</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">66</td>
+  <td class="sign">+</td>
+  <td class="code">new 65</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">67</td>
+  <td class="sign">+</td>
+  <td class="code">new 66</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">68</td>
+  <td class="sign">+</td>
+  <td class="code">new 67</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">69</td>
+  <td class="sign">+</td>
+  <td class="code">new 68</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">70</td>
+  <td class="sign">+</td>
+  <td class="code">new 69</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">71</td>
+  <td class="sign">+</td>
+  <td class="code">new 70</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">72</td>
+  <td class="sign">+</td>
+  <td class="code">new 71</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">73</td>
+  <td class="sign">+</td>
+  <td class="code">new 72</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">74</td>
+  <td class="sign">+</td>
+  <td class="code">new 73</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">75</td>
+  <td class="sign">+</td>
+  <td class="code">new 74</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">76</td>
+  <td class="sign">+</td>
+  <td class="code">new 75</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">77</td>
+  <td class="sign">+</td>
+  <td class="code">new 76</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">78</td>
+  <td class="sign">+</td>
+  <td class="code">new 77</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">79</td>
+  <td class="sign">+</td>
+  <td class="code">new 78</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">80</td>
+  <td class="sign">+</td>
+  <td class="code">new 79</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">81</td>
+  <td class="sign">+</td>
+  <td class="code">new 80</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">82</td>
+  <td class="sign">+</td>
+  <td class="code">new 81</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">83</td>
+  <td class="sign">+</td>
+  <td class="code">new 82</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">84</td>
+  <td class="sign">+</td>
+  <td class="code">new 83</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">85</td>
+  <td class="sign">+</td>
+  <td class="code">new 84</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">86</td>
+  <td class="sign">+</td>
+  <td class="code">new 85</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">87</td>
+  <td class="sign">+</td>
+  <td class="code">new 86</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">88</td>
+  <td class="sign">+</td>
+  <td class="code">new 87</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">89</td>
+  <td class="sign">+</td>
+  <td class="code">new 88</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">90</td>
+  <td class="sign">+</td>
+  <td class="code">new 89</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">91</td>
+  <td class="sign">+</td>
+  <td class="code">new 90</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">92</td>
+  <td class="sign">+</td>
+  <td class="code">new 91</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">93</td>
+  <td class="sign">+</td>
+  <td class="code">new 92</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">94</td>
+  <td class="sign">+</td>
+  <td class="code">new 93</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">95</td>
+  <td class="sign">+</td>
+  <td class="code">new 94</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">96</td>
+  <td class="sign">+</td>
+  <td class="code">new 95</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">97</td>
+  <td class="sign">+</td>
+  <td class="code">new 96</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">98</td>
+  <td class="sign">+</td>
+  <td class="code">new 97</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">99</td>
+  <td class="sign">+</td>
+  <td class="code">new 98</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">100</td>
+  <td class="sign">+</td>
+  <td class="code">new 99</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">101</td>
+  <td class="sign">+</td>
+  <td class="code">new 100</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">102</td>
+  <td class="sign">+</td>
+  <td class="code">new 101</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">103</td>
+  <td class="sign">+</td>
+  <td class="code">new 102</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">104</td>
+  <td class="sign">+</td>
+  <td class="code">new 103</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">105</td>
+  <td class="sign">+</td>
+  <td class="code">new 104</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">106</td>
+  <td class="sign">+</td>
+  <td class="code">new 105</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">107</td>
+  <td class="sign">+</td>
+  <td class="code">new 106</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">108</td>
+  <td class="sign">+</td>
+  <td class="code">new 107</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">109</td>
+  <td class="sign">+</td>
+  <td class="code">new 108</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">110</td>
+  <td class="sign">+</td>
+  <td class="code">new 109</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">111</td>
+  <td class="sign">+</td>
+  <td class="code">new 110</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">112</td>
+  <td class="sign">+</td>
+  <td class="code">new 111</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">113</td>
+  <td class="sign">+</td>
+  <td class="code">new 112</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">114</td>
+  <td class="sign">+</td>
+  <td class="code">new 113</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">115</td>
+  <td class="sign">+</td>
+  <td class="code">new 114</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">116</td>
+  <td class="sign">+</td>
+  <td class="code">new 115</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">117</td>
+  <td class="sign">+</td>
+  <td class="code">new 116</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">118</td>
+  <td class="sign">+</td>
+  <td class="code">new 117</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">119</td>
+  <td class="sign">+</td>
+  <td class="code">new 118</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">120</td>
+  <td class="sign">+</td>
+  <td class="code">new 119</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">121</td>
+  <td class="sign">+</td>
+  <td class="code">new 120</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">122</td>
+  <td class="sign">+</td>
+  <td class="code">new 121</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">123</td>
+  <td class="sign">+</td>
+  <td class="code">new 122</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">124</td>
+  <td class="sign">+</td>
+  <td class="code">new 123</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">125</td>
+  <td class="sign">+</td>
+  <td class="code">new 124</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">126</td>
+  <td class="sign">+</td>
+  <td class="code">new 125</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">127</td>
+  <td class="sign">+</td>
+  <td class="code">new 126</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">128</td>
+  <td class="sign">+</td>
+  <td class="code">new 127</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">129</td>
+  <td class="sign">+</td>
+  <td class="code">new 128</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">130</td>
+  <td class="sign">+</td>
+  <td class="code">new 129</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">131</td>
+  <td class="sign">+</td>
+  <td class="code">new 130</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">132</td>
+  <td class="sign">+</td>
+  <td class="code">new 131</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">133</td>
+  <td class="sign">+</td>
+  <td class="code">new 132</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">134</td>
+  <td class="sign">+</td>
+  <td class="code">new 133</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">135</td>
+  <td class="sign">+</td>
+  <td class="code">new 134</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">136</td>
+  <td class="sign">+</td>
+  <td class="code">new 135</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">137</td>
+  <td class="sign">+</td>
+  <td class="code">new 136</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">138</td>
+  <td class="sign">+</td>
+  <td class="code">new 137</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">139</td>
+  <td class="sign">+</td>
+  <td class="code">new 138</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">140</td>
+  <td class="sign">+</td>
+  <td class="code">new 139</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">141</td>
+  <td class="sign">+</td>
+  <td class="code">new 140</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">142</td>
+  <td class="sign">+</td>
+  <td class="code">new 141</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">143</td>
+  <td class="sign">+</td>
+  <td class="code">new 142</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">144</td>
+  <td class="sign">+</td>
+  <td class="code">new 143</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">145</td>
+  <td class="sign">+</td>
+  <td class="code">new 144</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">146</td>
+  <td class="sign">+</td>
+  <td class="code">new 145</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">147</td>
+  <td class="sign">+</td>
+  <td class="code">new 146</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">148</td>
+  <td class="sign">+</td>
+  <td class="code">new 147</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">149</td>
+  <td class="sign">+</td>
+  <td class="code">new 148</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">150</td>
+  <td class="sign">+</td>
+  <td class="code">new 149</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">151</td>
+  <td class="sign">+</td>
+  <td class="code">new 150</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">152</td>
+  <td class="sign">+</td>
+  <td class="code">new 151</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">153</td>
+  <td class="sign">+</td>
+  <td class="code">new 152</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">154</td>
+  <td class="sign">+</td>
+  <td class="code">new 153</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">155</td>
+  <td class="sign">+</td>
+  <td class="code">new 154</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">156</td>
+  <td class="sign">+</td>
+  <td class="code">new 155</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">157</td>
+  <td class="sign">+</td>
+  <td class="code">new 156</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">158</td>
+  <td class="sign">+</td>
+  <td class="code">new 157</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">159</td>
+  <td class="sign">+</td>
+  <td class="code">new 158</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">160</td>
+  <td class="sign">+</td>
+  <td class="code">new 159</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">161</td>
+  <td class="sign">+</td>
+  <td class="code">new 160</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">162</td>
+  <td class="sign">+</td>
+  <td class="code">new 161</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">163</td>
+  <td class="sign">+</td>
+  <td class="code">new 162</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">164</td>
+  <td class="sign">+</td>
+  <td class="code">new 163</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">165</td>
+  <td class="sign">+</td>
+  <td class="code">new 164</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">166</td>
+  <td class="sign">+</td>
+  <td class="code">new 165</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">167</td>
+  <td class="sign">+</td>
+  <td class="code">new 166</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">168</td>
+  <td class="sign">+</td>
+  <td class="code">new 167</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">169</td>
+  <td class="sign">+</td>
+  <td class="code">new 168</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">170</td>
+  <td class="sign">+</td>
+  <td class="code">new 169</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">171</td>
+  <td class="sign">+</td>
+  <td class="code">new 170</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">172</td>
+  <td class="sign">+</td>
+  <td class="code">new 171</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">173</td>
+  <td class="sign">+</td>
+  <td class="code">new 172</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">174</td>
+  <td class="sign">+</td>
+  <td class="code">new 173</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">175</td>
+  <td class="sign">+</td>
+  <td class="code">new 174</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">176</td>
+  <td class="sign">+</td>
+  <td class="code">new 175</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">177</td>
+  <td class="sign">+</td>
+  <td class="code">new 176</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">178</td>
+  <td class="sign">+</td>
+  <td class="code">new 177</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">179</td>
+  <td class="sign">+</td>
+  <td class="code">new 178</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">180</td>
+  <td class="sign">+</td>
+  <td class="code">new 179</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">181</td>
+  <td class="sign">+</td>
+  <td class="code">new 180</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">182</td>
+  <td class="sign">+</td>
+  <td class="code">new 181</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">183</td>
+  <td class="sign">+</td>
+  <td class="code">new 182</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">184</td>
+  <td class="sign">+</td>
+  <td class="code">new 183</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">185</td>
+  <td class="sign">+</td>
+  <td class="code">new 184</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">186</td>
+  <td class="sign">+</td>
+  <td class="code">new 185</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">187</td>
+  <td class="sign">+</td>
+  <td class="code">new 186</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">188</td>
+  <td class="sign">+</td>
+  <td class="code">new 187</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">189</td>
+  <td class="sign">+</td>
+  <td class="code">new 188</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">190</td>
+  <td class="sign">+</td>
+  <td class="code">new 189</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">191</td>
+  <td class="sign">+</td>
+  <td class="code">new 190</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">192</td>
+  <td class="sign">+</td>
+  <td class="code">new 191</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">193</td>
+  <td class="sign">+</td>
+  <td class="code">new 192</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">194</td>
+  <td class="sign">+</td>
+  <td class="code">new 193</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">195</td>
+  <td class="sign">+</td>
+  <td class="code">new 194</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">196</td>
+  <td class="sign">+</td>
+  <td class="code">new 195</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">197</td>
+  <td class="sign">+</td>
+  <td class="code">new 196</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">198</td>
+  <td class="sign">+</td>
+  <td class="code">new 197</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">199</td>
+  <td class="sign">+</td>
+  <td class="code">new 198</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">200</td>
+  <td class="sign">+</td>
+  <td class="code">new 199</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-0-hunk-0" data-ref="src/render.ts:1-201" data-hdr="@@ -1,40 +1,200 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-0-hunk-0" data-ref="src/render.ts:1-201" data-hdr="@@ -1,40 +1,200 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file" id="file-1" open>
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">src/scorecard.ts</code>
+    <span class="file-rank" title="review priority">#2</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+40 −6</span><span class="fbadge fbadge-reach" title="repo files importing this one (reach)">→ 3</span><span class="fbadge fbadge-hot" title="measured cyclomatic complexity hotspot">CCN 21</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Compute the new diff-only metrics.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-1" data-ref="src/scorecard.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-1" data-ref="src/scorecard.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,6 +1,40 @@</div>
+    <table class="diff"><tr class="ln ln-del">
+  <td class="num">1</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 0</td>
+</tr><tr class="ln ln-del">
+  <td class="num">2</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 1</td>
+</tr><tr class="ln ln-del">
+  <td class="num">3</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 2</td>
+</tr><tr class="ln ln-del">
+  <td class="num">4</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 3</td>
+</tr><tr class="ln ln-del">
+  <td class="num">5</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 4</td>
+</tr><tr class="ln ln-del">
+  <td class="num">6</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">1</td>
+  <td class="sign">+</td>
+  <td class="code">new 0</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">2</td>
+  <td class="sign">+</td>
+  <td class="code">new 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">3</td>
+  <td class="sign">+</td>
+  <td class="code">new 2</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">4</td>
+  <td class="sign">+</td>
+  <td class="code">new 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">5</td>
+  <td class="sign">+</td>
+  <td class="code">new 4</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">6</td>
+  <td class="sign">+</td>
+  <td class="code">new 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">7</td>
+  <td class="sign">+</td>
+  <td class="code">new 6</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">8</td>
+  <td class="sign">+</td>
+  <td class="code">new 7</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">9</td>
+  <td class="sign">+</td>
+  <td class="code">new 8</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">10</td>
+  <td class="sign">+</td>
+  <td class="code">new 9</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">11</td>
+  <td class="sign">+</td>
+  <td class="code">new 10</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">12</td>
+  <td class="sign">+</td>
+  <td class="code">new 11</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">13</td>
+  <td class="sign">+</td>
+  <td class="code">new 12</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">14</td>
+  <td class="sign">+</td>
+  <td class="code">new 13</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">15</td>
+  <td class="sign">+</td>
+  <td class="code">new 14</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">16</td>
+  <td class="sign">+</td>
+  <td class="code">new 15</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">17</td>
+  <td class="sign">+</td>
+  <td class="code">new 16</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">18</td>
+  <td class="sign">+</td>
+  <td class="code">new 17</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">19</td>
+  <td class="sign">+</td>
+  <td class="code">new 18</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">20</td>
+  <td class="sign">+</td>
+  <td class="code">new 19</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">21</td>
+  <td class="sign">+</td>
+  <td class="code">new 20</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">22</td>
+  <td class="sign">+</td>
+  <td class="code">new 21</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">23</td>
+  <td class="sign">+</td>
+  <td class="code">new 22</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">24</td>
+  <td class="sign">+</td>
+  <td class="code">new 23</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">25</td>
+  <td class="sign">+</td>
+  <td class="code">new 24</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">26</td>
+  <td class="sign">+</td>
+  <td class="code">new 25</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">27</td>
+  <td class="sign">+</td>
+  <td class="code">new 26</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">28</td>
+  <td class="sign">+</td>
+  <td class="code">new 27</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">29</td>
+  <td class="sign">+</td>
+  <td class="code">new 28</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">30</td>
+  <td class="sign">+</td>
+  <td class="code">new 29</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">31</td>
+  <td class="sign">+</td>
+  <td class="code">new 30</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">32</td>
+  <td class="sign">+</td>
+  <td class="code">new 31</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">33</td>
+  <td class="sign">+</td>
+  <td class="code">new 32</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">34</td>
+  <td class="sign">+</td>
+  <td class="code">new 33</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">35</td>
+  <td class="sign">+</td>
+  <td class="code">new 34</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">36</td>
+  <td class="sign">+</td>
+  <td class="code">new 35</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">37</td>
+  <td class="sign">+</td>
+  <td class="code">new 36</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">38</td>
+  <td class="sign">+</td>
+  <td class="code">new 37</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">39</td>
+  <td class="sign">+</td>
+  <td class="code">new 38</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">40</td>
+  <td class="sign">+</td>
+  <td class="code">new 39</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-1-hunk-0" data-ref="src/scorecard.ts:1-41" data-hdr="@@ -1,6 +1,40 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-1-hunk-0" data-ref="src/scorecard.ts:1-41" data-hdr="@@ -1,6 +1,40 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file" id="file-4" open>
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">test/render.test.ts</code>
+    <span class="file-rank" title="review priority">#3</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+40 −0</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Cover the five charts.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-4" data-ref="test/render.test.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-4" data-ref="test/render.test.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,0 +1,40 @@</div>
+    <table class="diff"><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">1</td>
+  <td class="sign">+</td>
+  <td class="code">new 0</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">2</td>
+  <td class="sign">+</td>
+  <td class="code">new 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">3</td>
+  <td class="sign">+</td>
+  <td class="code">new 2</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">4</td>
+  <td class="sign">+</td>
+  <td class="code">new 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">5</td>
+  <td class="sign">+</td>
+  <td class="code">new 4</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">6</td>
+  <td class="sign">+</td>
+  <td class="code">new 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">7</td>
+  <td class="sign">+</td>
+  <td class="code">new 6</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">8</td>
+  <td class="sign">+</td>
+  <td class="code">new 7</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">9</td>
+  <td class="sign">+</td>
+  <td class="code">new 8</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">10</td>
+  <td class="sign">+</td>
+  <td class="code">new 9</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">11</td>
+  <td class="sign">+</td>
+  <td class="code">new 10</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">12</td>
+  <td class="sign">+</td>
+  <td class="code">new 11</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">13</td>
+  <td class="sign">+</td>
+  <td class="code">new 12</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">14</td>
+  <td class="sign">+</td>
+  <td class="code">new 13</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">15</td>
+  <td class="sign">+</td>
+  <td class="code">new 14</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">16</td>
+  <td class="sign">+</td>
+  <td class="code">new 15</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">17</td>
+  <td class="sign">+</td>
+  <td class="code">new 16</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">18</td>
+  <td class="sign">+</td>
+  <td class="code">new 17</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">19</td>
+  <td class="sign">+</td>
+  <td class="code">new 18</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">20</td>
+  <td class="sign">+</td>
+  <td class="code">new 19</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">21</td>
+  <td class="sign">+</td>
+  <td class="code">new 20</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">22</td>
+  <td class="sign">+</td>
+  <td class="code">new 21</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">23</td>
+  <td class="sign">+</td>
+  <td class="code">new 22</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">24</td>
+  <td class="sign">+</td>
+  <td class="code">new 23</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">25</td>
+  <td class="sign">+</td>
+  <td class="code">new 24</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">26</td>
+  <td class="sign">+</td>
+  <td class="code">new 25</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">27</td>
+  <td class="sign">+</td>
+  <td class="code">new 26</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">28</td>
+  <td class="sign">+</td>
+  <td class="code">new 27</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">29</td>
+  <td class="sign">+</td>
+  <td class="code">new 28</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">30</td>
+  <td class="sign">+</td>
+  <td class="code">new 29</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">31</td>
+  <td class="sign">+</td>
+  <td class="code">new 30</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">32</td>
+  <td class="sign">+</td>
+  <td class="code">new 31</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">33</td>
+  <td class="sign">+</td>
+  <td class="code">new 32</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">34</td>
+  <td class="sign">+</td>
+  <td class="code">new 33</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">35</td>
+  <td class="sign">+</td>
+  <td class="code">new 34</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">36</td>
+  <td class="sign">+</td>
+  <td class="code">new 35</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">37</td>
+  <td class="sign">+</td>
+  <td class="code">new 36</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">38</td>
+  <td class="sign">+</td>
+  <td class="code">new 37</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">39</td>
+  <td class="sign">+</td>
+  <td class="code">new 38</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">40</td>
+  <td class="sign">+</td>
+  <td class="code">new 39</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-4-hunk-0" data-ref="test/render.test.ts:1-41" data-hdr="@@ -1,0 +1,40 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-4-hunk-0" data-ref="test/render.test.ts:1-41" data-hdr="@@ -1,0 +1,40 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file" id="file-2" open>
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">src/types.ts</code>
+    <span class="file-rank" title="review priority">#4</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+30 −4</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Extend ScorecardModel and ReviewModel.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-2" data-ref="src/types.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-2" data-ref="src/types.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,4 +1,30 @@</div>
+    <table class="diff"><tr class="ln ln-del">
+  <td class="num">1</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 0</td>
+</tr><tr class="ln ln-del">
+  <td class="num">2</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 1</td>
+</tr><tr class="ln ln-del">
+  <td class="num">3</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 2</td>
+</tr><tr class="ln ln-del">
+  <td class="num">4</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">1</td>
+  <td class="sign">+</td>
+  <td class="code">new 0</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">2</td>
+  <td class="sign">+</td>
+  <td class="code">new 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">3</td>
+  <td class="sign">+</td>
+  <td class="code">new 2</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">4</td>
+  <td class="sign">+</td>
+  <td class="code">new 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">5</td>
+  <td class="sign">+</td>
+  <td class="code">new 4</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">6</td>
+  <td class="sign">+</td>
+  <td class="code">new 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">7</td>
+  <td class="sign">+</td>
+  <td class="code">new 6</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">8</td>
+  <td class="sign">+</td>
+  <td class="code">new 7</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">9</td>
+  <td class="sign">+</td>
+  <td class="code">new 8</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">10</td>
+  <td class="sign">+</td>
+  <td class="code">new 9</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">11</td>
+  <td class="sign">+</td>
+  <td class="code">new 10</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">12</td>
+  <td class="sign">+</td>
+  <td class="code">new 11</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">13</td>
+  <td class="sign">+</td>
+  <td class="code">new 12</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">14</td>
+  <td class="sign">+</td>
+  <td class="code">new 13</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">15</td>
+  <td class="sign">+</td>
+  <td class="code">new 14</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">16</td>
+  <td class="sign">+</td>
+  <td class="code">new 15</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">17</td>
+  <td class="sign">+</td>
+  <td class="code">new 16</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">18</td>
+  <td class="sign">+</td>
+  <td class="code">new 17</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">19</td>
+  <td class="sign">+</td>
+  <td class="code">new 18</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">20</td>
+  <td class="sign">+</td>
+  <td class="code">new 19</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">21</td>
+  <td class="sign">+</td>
+  <td class="code">new 20</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">22</td>
+  <td class="sign">+</td>
+  <td class="code">new 21</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">23</td>
+  <td class="sign">+</td>
+  <td class="code">new 22</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">24</td>
+  <td class="sign">+</td>
+  <td class="code">new 23</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">25</td>
+  <td class="sign">+</td>
+  <td class="code">new 24</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">26</td>
+  <td class="sign">+</td>
+  <td class="code">new 25</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">27</td>
+  <td class="sign">+</td>
+  <td class="code">new 26</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">28</td>
+  <td class="sign">+</td>
+  <td class="code">new 27</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">29</td>
+  <td class="sign">+</td>
+  <td class="code">new 28</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">30</td>
+  <td class="sign">+</td>
+  <td class="code">new 29</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-2-hunk-0" data-ref="src/types.ts:1-31" data-hdr="@@ -1,4 +1,30 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-2-hunk-0" data-ref="src/types.ts:1-31" data-hdr="@@ -1,4 +1,30 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file" id="file-3" open>
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">src/match.ts</code>
+    <span class="file-rank" title="review priority">#5</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+18 −2</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Compute intent coverage in the join.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-3" data-ref="src/match.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-3" data-ref="src/match.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,2 +1,18 @@</div>
+    <table class="diff"><tr class="ln ln-del">
+  <td class="num">1</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 0</td>
+</tr><tr class="ln ln-del">
+  <td class="num">2</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">1</td>
+  <td class="sign">+</td>
+  <td class="code">new 0</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">2</td>
+  <td class="sign">+</td>
+  <td class="code">new 1</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">3</td>
+  <td class="sign">+</td>
+  <td class="code">new 2</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">4</td>
+  <td class="sign">+</td>
+  <td class="code">new 3</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">5</td>
+  <td class="sign">+</td>
+  <td class="code">new 4</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">6</td>
+  <td class="sign">+</td>
+  <td class="code">new 5</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">7</td>
+  <td class="sign">+</td>
+  <td class="code">new 6</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">8</td>
+  <td class="sign">+</td>
+  <td class="code">new 7</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">9</td>
+  <td class="sign">+</td>
+  <td class="code">new 8</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">10</td>
+  <td class="sign">+</td>
+  <td class="code">new 9</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">11</td>
+  <td class="sign">+</td>
+  <td class="code">new 10</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">12</td>
+  <td class="sign">+</td>
+  <td class="code">new 11</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">13</td>
+  <td class="sign">+</td>
+  <td class="code">new 12</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">14</td>
+  <td class="sign">+</td>
+  <td class="code">new 13</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">15</td>
+  <td class="sign">+</td>
+  <td class="code">new 14</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">16</td>
+  <td class="sign">+</td>
+  <td class="code">new 15</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">17</td>
+  <td class="sign">+</td>
+  <td class="code">new 16</td>
+</tr><tr class="ln ln-add">
+  <td class="num"></td>
+  <td class="num">18</td>
+  <td class="sign">+</td>
+  <td class="code">new 17</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-3-hunk-0" data-ref="src/match.ts:1-19" data-hdr="@@ -1,2 +1,18 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-3-hunk-0" data-ref="src/match.ts:1-19" data-hdr="@@ -1,2 +1,18 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file is-noise" id="file-5">
+  <summary class="file-head">
+    <span class="status status-modified">modified</span>
+    <code class="path">package-lock.json</code>
+    <span class="file-rank" title="review priority">#6</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+0 −44</span><span class="fbadge fbadge-gap" title="some of this file has no written intent">⚠ intent</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-5" data-ref="package-lock.json" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-5" data-ref="package-lock.json" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,44 +1,0 @@</div>
+    <table class="diff"><tr class="ln ln-del">
+  <td class="num">1</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 0</td>
+</tr><tr class="ln ln-del">
+  <td class="num">2</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 1</td>
+</tr><tr class="ln ln-del">
+  <td class="num">3</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 2</td>
+</tr><tr class="ln ln-del">
+  <td class="num">4</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 3</td>
+</tr><tr class="ln ln-del">
+  <td class="num">5</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 4</td>
+</tr><tr class="ln ln-del">
+  <td class="num">6</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 5</td>
+</tr><tr class="ln ln-del">
+  <td class="num">7</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 6</td>
+</tr><tr class="ln ln-del">
+  <td class="num">8</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 7</td>
+</tr><tr class="ln ln-del">
+  <td class="num">9</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 8</td>
+</tr><tr class="ln ln-del">
+  <td class="num">10</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 9</td>
+</tr><tr class="ln ln-del">
+  <td class="num">11</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 10</td>
+</tr><tr class="ln ln-del">
+  <td class="num">12</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 11</td>
+</tr><tr class="ln ln-del">
+  <td class="num">13</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 12</td>
+</tr><tr class="ln ln-del">
+  <td class="num">14</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 13</td>
+</tr><tr class="ln ln-del">
+  <td class="num">15</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 14</td>
+</tr><tr class="ln ln-del">
+  <td class="num">16</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 15</td>
+</tr><tr class="ln ln-del">
+  <td class="num">17</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 16</td>
+</tr><tr class="ln ln-del">
+  <td class="num">18</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 17</td>
+</tr><tr class="ln ln-del">
+  <td class="num">19</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 18</td>
+</tr><tr class="ln ln-del">
+  <td class="num">20</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 19</td>
+</tr><tr class="ln ln-del">
+  <td class="num">21</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 20</td>
+</tr><tr class="ln ln-del">
+  <td class="num">22</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 21</td>
+</tr><tr class="ln ln-del">
+  <td class="num">23</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 22</td>
+</tr><tr class="ln ln-del">
+  <td class="num">24</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 23</td>
+</tr><tr class="ln ln-del">
+  <td class="num">25</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 24</td>
+</tr><tr class="ln ln-del">
+  <td class="num">26</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 25</td>
+</tr><tr class="ln ln-del">
+  <td class="num">27</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 26</td>
+</tr><tr class="ln ln-del">
+  <td class="num">28</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 27</td>
+</tr><tr class="ln ln-del">
+  <td class="num">29</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 28</td>
+</tr><tr class="ln ln-del">
+  <td class="num">30</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 29</td>
+</tr><tr class="ln ln-del">
+  <td class="num">31</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 30</td>
+</tr><tr class="ln ln-del">
+  <td class="num">32</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 31</td>
+</tr><tr class="ln ln-del">
+  <td class="num">33</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 32</td>
+</tr><tr class="ln ln-del">
+  <td class="num">34</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 33</td>
+</tr><tr class="ln ln-del">
+  <td class="num">35</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 34</td>
+</tr><tr class="ln ln-del">
+  <td class="num">36</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 35</td>
+</tr><tr class="ln ln-del">
+  <td class="num">37</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 36</td>
+</tr><tr class="ln ln-del">
+  <td class="num">38</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 37</td>
+</tr><tr class="ln ln-del">
+  <td class="num">39</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 38</td>
+</tr><tr class="ln ln-del">
+  <td class="num">40</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 39</td>
+</tr><tr class="ln ln-del">
+  <td class="num">41</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 40</td>
+</tr><tr class="ln ln-del">
+  <td class="num">42</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 41</td>
+</tr><tr class="ln ln-del">
+  <td class="num">43</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 42</td>
+</tr><tr class="ln ln-del">
+  <td class="num">44</td>
+  <td class="num"></td>
+  <td class="sign">-</td>
+  <td class="code">old 43</td>
+</tr></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note missing">⚠ No intent for this hunk.</div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-5-hunk-0" data-ref="package-lock.json:1" data-hdr="@@ -1,44 +1,0 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-5-hunk-0" data-ref="package-lock.json:1" data-hdr="@@ -1,44 +1,0 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+<details class="file" id="file-6" open>
+  <summary class="file-head">
+    <span class="status status-deleted">deleted</span>
+    <code class="path">src/legacy.ts</code>
+    <span class="file-rank" title="review priority">#7</span>
+    <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+0 −0</span></span>
+    
+    <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
+  </summary>
+  <div class="file-body">
+  <div class="file-intent"><div class="ww"><div class="what"><span class="lbl">What</span> <p>changed things</p></div><div class="why"><span class="lbl">Why</span> <p>Removed dead module.</p></div></div></div>
+  <div class="cbox-group" data-ckind="file">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-6" data-ref="src/legacy.ts" data-akind="comment" placeholder="Note to the agent about this file…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-6" data-ref="src/legacy.ts" data-akind="question" placeholder="Question for the agent about this file…"></textarea>
+    </div>
+  </div>
+  <div class="hunk-row">
+  <div class="hunk-diff">
+    <div class="hunk-header">@@ -1,0 +1,0 @@</div>
+    <table class="diff"></table>
+  </div>
+  <aside class="hunk-notes">
+    <div class="note"><div class="ww"><div class="what"><span class="lbl">What</span> <p>w</p></div><div class="why"><span class="lbl">Why</span> <p>y</p></div></div></div>
+    <div class="cbox-group" data-ckind="hunk">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <textarea class="cinput" data-cid="file-6-hunk-0" data-ref="src/legacy.ts:1" data-hdr="@@ -1,0 +1,0 @@" data-akind="comment" placeholder="Note to the agent about this hunk…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <textarea class="cinput" data-cid="q:file-6-hunk-0" data-ref="src/legacy.ts:1" data-hdr="@@ -1,0 +1,0 @@" data-akind="question" placeholder="Question for the agent about this hunk…"></textarea>
+    </div>
+  </div>
+  </aside>
+</div>
+  
+  </div>
+</details>
+</main>
+
+
+<section class="review-feedback" id="feedback">
+  <h2>Review feedback</h2>
+  <p class="rf-hint">Comment (💬) or ask a question (❓) on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall comment</span>
+    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" data-akind="comment" placeholder="Overall feedback on the change set…"></textarea>
+  </label>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall question</span>
+    <textarea class="cinput fb-general-input" data-cid="q:__page__" data-ref="__general__" data-akind="question" placeholder="An overall question for the agent…"></textarea>
+  </label>
+  <div class="fb-summary"></div>
+  <h3 class="fb-out-head">Prompt for the agent</h3>
+  <textarea class="fb-output" readonly placeholder="Comments you add are gathered here as a prompt for the agent."></textarea>
+  <div class="fb-actions">
+    <button class="fb-copy" type="button">Copy as prompt</button>
+    <span class="fb-copied" hidden>Copied ✓</span>
+  </div>
+</section>
+</div>
+</div>
+
+<div id="lightbox" role="dialog" aria-modal="true" aria-label="Figure detail">
+  <button class="lightbox-close" type="button" aria-label="Close">✕</button>
+  <div class="lightbox-stage"></div>
+</div>
+<div class="tour" id="tour" hidden role="region" aria-label="Guided review">
+  <button class="tour-btn tour-prev" type="button">‹ Prev</button>
+  <span class="tour-status">Reviewing <b class="tour-cur">1</b> of <b class="tour-total">0</b> — <code class="tour-path"></code></span>
+  <button class="tour-btn tour-next" type="button">Next ›</button>
+  <button class="tour-btn tour-exit" type="button" aria-label="Exit guided review">✕</button>
+</div>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "strict" });
+</script>
+<script>
+  (function () {
+    var box = document.getElementById("lightbox");
+    var stage = box.querySelector(".lightbox-stage");
+    function close() {
+      box.classList.remove("open");
+      stage.replaceChildren();
+      document.body.style.overflow = "";
+    }
+    function open(fig) {
+      stage.replaceChildren(fig.cloneNode(true));
+      box.classList.add("open");
+      document.body.style.overflow = "hidden";
+    }
+    document.querySelectorAll(".zoomable").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        if (e.target.closest("a")) return;
+        open(el);
+      });
+    });
+    box.addEventListener("click", function (e) {
+      if (e.target === box || e.target.classList.contains("lightbox-close")) close();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && box.classList.contains("open")) close();
+    });
+  })();
+</script>
+<script>
+  (function () {
+    var KEY = "review-intent:viewed:Add intent-coverage gate and blast-radius visuals@main";
+    var store;
+    try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
+    var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+    var prog = document.querySelector(".tb-progress");
+    function update() {
+      if (!prog) return;
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      prog.textContent = done + " / " + files.length + " reviewed";
+    }
+    files.forEach(function (f) {
+      var cb = f.querySelector(".viewed-cb");
+      var toggle = f.querySelector(".viewed-toggle");
+      if (!cb) return;
+      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; }
+      // Don't let the control toggle the <details> it lives in.
+      if (toggle) toggle.addEventListener("click", function (e) { e.stopPropagation(); });
+      cb.addEventListener("change", function () {
+        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; }
+        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; }
+        try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
+        update();
+      });
+    });
+    update();
+
+    var links = {};
+    document.querySelectorAll(".file-index a[href^='#']").forEach(function (a) {
+      links[a.getAttribute("href").slice(1)] = a;
+    });
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          var a = links[en.target.id];
+          if (a) a.classList.toggle("active", en.isIntersecting);
+        });
+      }, { rootMargin: "-45% 0px -45% 0px" });
+      files.forEach(function (f) { io.observe(f); });
+    }
+  })();
+</script>
+<script>
+  (function () {
+    var rail = document.getElementById("rail");
+    if (!rail) return;
+    var KEY = "review-intent:pinned:Add intent-coverage gate and blast-radius visuals@main";
+    // Declaration order — the rail stacks pinned blocks in this order regardless
+    // of the order the reader pinned them, so the rail stays predictable.
+    var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
+    var wide = window.matchMedia("(min-width: 1920px)");
+    var nodes = {}, anchors = {};
+    document.querySelectorAll(".movable").forEach(function (el) {
+      var k = el.getAttribute("data-movable");
+      nodes[k] = el;
+      var a = document.createComment("m:" + k);
+      el.parentNode.insertBefore(a, el);
+      anchors[k] = a;
+    });
+    var pinned;
+    try { pinned = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    if (!Array.isArray(pinned)) pinned = ["file-index"];
+    pinned = pinned.filter(function (k) { return nodes[k]; });
+    function apply() {
+      var isWide = wide.matches;
+      ORDER.forEach(function (k) {
+        var el = nodes[k];
+        if (!el) return;
+        var on = pinned.indexOf(k) !== -1;
+        var btn = el.querySelector(".pin-btn");
+        if (btn) {
+          btn.setAttribute("aria-pressed", on ? "true" : "false");
+          btn.title = on ? "Unpin from sidebar" : "Pin to sidebar";
+          btn.setAttribute("aria-label", btn.title);
+        }
+        if (isWide && on) rail.appendChild(el);
+        else anchors[k].parentNode.insertBefore(el, anchors[k]);
+      });
+      document.body.classList.toggle("has-pins", isWide && pinned.length > 0);
+    }
+    document.querySelectorAll(".pin-btn").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var el = btn.closest(".movable");
+        if (!el) return;
+        var k = el.getAttribute("data-movable");
+        var i = pinned.indexOf(k);
+        if (i === -1) pinned.push(k); else pinned.splice(i, 1);
+        try { localStorage.setItem(KEY, JSON.stringify(pinned)); } catch (e) {}
+        apply();
+      });
+    });
+    if (wide.addEventListener) wide.addEventListener("change", apply);
+    else if (wide.addListener) wide.addListener(apply);
+    apply();
+  })();
+</script>
+<script>
+  (function () {
+    var KEY = "review-intent:comments:Add intent-coverage gate and blast-radius visuals@main";
+    var META = {"title":"Add intent-coverage gate and blast-radius visuals","base":"main"};
+    var store;
+    try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
+    function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+
+    var inputs = Array.prototype.slice.call(document.querySelectorAll(".cinput"));
+    var out = document.querySelector(".fb-output");
+    var summary = document.querySelector(".fb-summary");
+    function clean(s) { return s.replace(/\r/g, "").trim(); }
+    function indent(s) { return clean(s).replace(/\n/g, "\n  "); }
+    function mark(t) {
+      var b = t.closest(".cbox"); if (!b) return;
+      var cls = t.getAttribute("data-akind") === "question" ? "has-question" : "has-comment";
+      b.classList.toggle(cls, !!clean(t.value));
+    }
+    function reveal(t) { var b = t.closest(".cbox"); if (b) b.classList.add("open"); }
+
+    // Gather one kind ("comment" | "question") grouped by file -> hunk, plus its
+    // page-level box. Returns { lines: [...], count: n }.
+    function collect(akind, files) {
+      var lines = [], count = 0;
+      files.forEach(function (f) {
+        var code = f.querySelector(".path");
+        var path = code ? code.textContent : f.id;
+        var section = [];
+        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput[data-akind="' + akind + '"]');
+        if (fc && clean(fc.value)) { section.push("- " + indent(fc.value)); count++; }
+        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput[data-akind="' + akind + '"]').forEach(function (hc) {
+          if (clean(hc.value)) {
+            var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
+            section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
+            section.push("- " + indent(hc.value));
+            count++;
+          }
+        });
+        if (section.length) { lines.push("## " + path); lines.push.apply(lines, section); lines.push(""); }
+      });
+      var pgCid = akind === "question" ? "q:__page__" : "__page__";
+      var pg = document.querySelector('.cinput[data-cid="' + pgCid + '"]');
+      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
+      return { lines: lines, count: count };
+    }
+
+    function assemble() {
+      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      var q = collect("question", files);
+      var c = collect("comment", files);
+      if (out) {
+        if (q.count === 0 && c.count === 0) { out.value = ""; }
+        else {
+          var head = 'Review feedback on "' + META.title + '" (' + META.base + "...HEAD).\n" +
+            "Sign-off: " + done + " / " + files.length + " files reviewed. " +
+            q.count + " question" + (q.count === 1 ? "" : "s") + ", " +
+            c.count + " comment" + (c.count === 1 ? "" : "s") + " below.\n";
+          var blocks = [];
+          if (q.count) { blocks.push("# Questions (please answer)"); blocks = blocks.concat(q.lines); }
+          if (c.count) { blocks.push("# Comments"); blocks = blocks.concat(c.lines); }
+          out.value = head + "\n" + blocks.join("\n").replace(/\n+$/, "") + "\n";
+        }
+      }
+      if (summary) {
+        summary.textContent = done + " / " + files.length + " files reviewed · " +
+          q.count + " question" + (q.count === 1 ? "" : "s") + " · " +
+          c.count + " comment" + (c.count === 1 ? "" : "s");
+      }
+    }
+
+    inputs.forEach(function (t) {
+      var cid = t.getAttribute("data-cid");
+      if (store[cid]) { t.value = store[cid]; reveal(t); }
+      mark(t);
+      t.addEventListener("input", function () {
+        if (clean(t.value)) store[cid] = t.value; else delete store[cid];
+        save(); mark(t); assemble();
+      });
+    });
+
+    document.querySelectorAll(".cbtn").forEach(function (b) {
+      b.addEventListener("click", function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var box = b.closest(".cbox"); if (!box) return;
+        box.classList.toggle("open");
+        if (box.classList.contains("open")) { var ta = box.querySelector(".cinput"); if (ta) ta.focus(); }
+      });
+    });
+
+    var copyBtn = document.querySelector(".fb-copy"), copied = document.querySelector(".fb-copied");
+    if (copyBtn && out) {
+      copyBtn.addEventListener("click", function () {
+        assemble();
+        var text = out.value; if (!text) return;
+        function flash() { if (copied) { copied.hidden = false; setTimeout(function () { copied.hidden = true; }, 1600); } }
+        out.select();
+        var ok = false; try { ok = document.execCommand("copy"); } catch (e) {}
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(flash, function () { if (ok) flash(); });
+        } else if (ok) { flash(); }
+      });
+    }
+
+    assemble();
+  })();
+</script>
+<script>
+  (function () {
+    var ORDER = [{"slug":"file-0","path":"src/render.ts"},{"slug":"file-1","path":"src/scorecard.ts"},{"slug":"file-4","path":"test/render.test.ts"},{"slug":"file-2","path":"src/types.ts"},{"slug":"file-3","path":"src/match.ts"},{"slug":"file-5","path":"package-lock.json"},{"slug":"file-6","path":"src/legacy.ts"}];
+    var tour = document.getElementById("tour");
+    var startBtn = document.querySelector(".tb-tour");
+    if (!tour || !startBtn || !ORDER.length) return;
+    var cur = tour.querySelector(".tour-cur"), total = tour.querySelector(".tour-total");
+    var pathEl = tour.querySelector(".tour-path");
+    var prev = tour.querySelector(".tour-prev"), next = tour.querySelector(".tour-next"), exit = tour.querySelector(".tour-exit");
+    var i = 0, flashTimer;
+    if (total) total.textContent = ORDER.length;
+    function go(n) {
+      i = Math.max(0, Math.min(ORDER.length - 1, n));
+      var item = ORDER[i], el = document.getElementById(item.slug);
+      if (el) {
+        if (el.tagName === "DETAILS") el.open = true;
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.add("tour-flash");
+        clearTimeout(flashTimer);
+        flashTimer = setTimeout(function () { el.classList.remove("tour-flash"); }, 1200);
+      }
+      if (cur) cur.textContent = i + 1;
+      if (pathEl) pathEl.textContent = item.path;
+      if (prev) prev.disabled = i === 0;
+      if (next) next.disabled = i === ORDER.length - 1;
+    }
+    function start() { tour.hidden = false; document.body.classList.add("touring"); go(0); }
+    function close() { tour.hidden = true; document.body.classList.remove("touring"); }
+    startBtn.addEventListener("click", start);
+    if (prev) prev.addEventListener("click", function () { go(i - 1); });
+    if (next) next.addEventListener("click", function () { go(i + 1); });
+    if (exit) exit.addEventListener("click", close);
+    document.addEventListener("keydown", function (e) {
+      if (tour.hidden) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); go(i + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); go(i - 1); }
+      else if (e.key === "Escape") { close(); }
+    });
+  })();
+</script>
+</body>
+</html>

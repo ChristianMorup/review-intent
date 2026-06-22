@@ -113,7 +113,7 @@ async function main(): Promise<void> {
 
   const cwd = process.cwd();
   const base = resolveBase(cwd, values.base);
-  const rawDiff = getDiff(cwd, base);
+  const { text: rawDiff, scope: diffScope } = getDiff(cwd, base);
   const artifact = loadArtifact(cwd, values.artifact);
   const config = loadConfig(cwd);
   const diff = parseDiffText(rawDiff);
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
   // external lizard analyzer. Degrades gracefully if lizard isn't installed.
   const complexity = analyzeComplexity(cwd, changedCodePaths, config.complexityThreshold);
 
-  const model = buildReviewModel(artifact, diff, base, scorecard, reach, complexity);
+  const model = buildReviewModel(artifact, diff, base, scorecard, reach, complexity, diffScope);
 
   // Strict completeness gate: refuse to render incomplete intent unless the
   // author explicitly opts into a draft.

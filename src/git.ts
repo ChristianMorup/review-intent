@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import type { DiffScope } from "./types.js";
 
 export class GitError extends Error {}
 
@@ -45,9 +46,10 @@ export function resolveBase(cwd: string, override?: string): string {
 
 /**
  * Produce the PR-style diff: changes on the current branch since it diverged
- * from base (`git diff base...HEAD`). Returns the raw unified diff text.
+ * from base (`git diff base...HEAD`). Returns the raw unified diff text and a
+ * clean scope descriptor (real dirty-tree detection lands in Task 2).
  */
-export function getDiff(cwd: string, base: string): string {
+export function getDiff(cwd: string, base: string): { text: string; scope: DiffScope } {
   // Fails early with a clear message if cwd is not a git work tree.
   try {
     execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
@@ -57,5 +59,7 @@ export function getDiff(cwd: string, base: string): string {
   } catch {
     throw new GitError(`Not a git repository: ${cwd}`);
   }
-  return git(["diff", `${base}...HEAD`], cwd);
+  const text = git(["diff", `${base}...HEAD`], cwd);
+  const scope: DiffScope = { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] };
+  return { text, scope };
 }

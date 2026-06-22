@@ -123,6 +123,12 @@ honors the same completeness gate as the CLI: if intent is incomplete (and
 browser. The authoring skill (below) knows about this tool and can offer to drive
 the review through it once the intent artifact is written.
 
+The same server also ships the **authoring contract** so the honesty guidance
+travels with the tool, even without the skill installed: as a resource
+(`review-intent://authoring-guide`) the agent can read, and as a prompt
+(`author_intent`, surfaced in Claude Code as `/mcp__review-intent__author_intent`)
+the reviewer can invoke to steer the change-making agent.
+
 ### Make it yours
 
 Fourteen built-in themes, switched live and remembered between runs — from Paper to

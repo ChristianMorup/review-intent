@@ -9,6 +9,7 @@ import {
   reviewToolInputShape,
   parseSubmission,
   formatToolResult,
+  authoringGuide,
   serveAndBlock,
 } from "../src/mcp.js";
 
@@ -41,6 +42,29 @@ describe("formatToolResult", () => {
       "Reviewer decision: request-changes\n\nChanges requested, but no specific feedback was provided.";
     expect(formatToolResult("request-changes", "")).toBe(expected);
     expect(formatToolResult("request-changes", "   ")).toBe(expected);
+  });
+});
+
+describe("authoringGuide", () => {
+  it("strips a leading YAML frontmatter block and trims", () => {
+    const src = "---\nname: x\ndescription: y\n---\n\n# Heading\n\nBody text.\n";
+    expect(authoringGuide(src)).toBe("# Heading\n\nBody text.");
+  });
+
+  it("tolerates CRLF frontmatter delimiters", () => {
+    const src = "---\r\nname: x\r\n---\r\nBody.\r\n";
+    expect(authoringGuide(src)).toBe("Body.");
+  });
+
+  it("returns content unchanged (trimmed) when there is no frontmatter", () => {
+    expect(authoringGuide("# Just a doc\n")).toBe("# Just a doc");
+  });
+
+  it("derives the real contract from SKILL_CONTENT without its frontmatter", () => {
+    const guide = authoringGuide();
+    expect(guide.startsWith("---")).toBe(false);
+    expect(guide).toContain("Authoring an honest intent artifact");
+    expect(guide).toContain("honesty contract");
   });
 });
 

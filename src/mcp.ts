@@ -13,6 +13,7 @@ import { formatGaps } from "./completeness.js";
 import { GitError } from "./git.js";
 import { ArtifactError } from "./artifact.js";
 import { ConfigError } from "./config.js";
+import { SKILL_CONTENT } from "./skill.js";
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────
 
@@ -44,6 +45,18 @@ const SubmissionSchema = z.object({
 export function parseSubmission(body: string): Submission {
   const parsed: unknown = JSON.parse(body);
   return SubmissionSchema.parse(parsed);
+}
+
+/**
+ * The authoring contract, derived from the skill's single source of truth with
+ * its YAML frontmatter stripped (the frontmatter is a skill-file artifact; an
+ * MCP prompt/resource doesn't want it). Lets the honesty guidance ship with the
+ * server, so it's available even when the authoring skill isn't installed.
+ */
+export function authoringGuide(skillContent: string = SKILL_CONTENT): string {
+  const frontmatter = skillContent.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+  const body = frontmatter ? skillContent.slice(frontmatter[0].length) : skillContent;
+  return body.trim();
 }
 
 /** Shape the reviewer's decision + assembled prompt into the tool-result text. */
@@ -231,6 +244,40 @@ export async function runMcp(_argv: string[]): Promise<void> {
         };
       }
     },
+  );
+
+  // Ship the authoring contract alongside the tool, so the honesty guidance is
+  // available even when the review-intent-authoring skill isn't installed. The
+  // skill stays the auto-trigger; these are the on-demand mirrors.
+  const guide = authoringGuide();
+
+  // Resource: the agent can read the guide as context before authoring intent.
+  server.registerResource(
+    "authoring-guide",
+    "review-intent://authoring-guide",
+    {
+      title: "Authoring honest review intent",
+      description:
+        "How to author an honest .review/intent.json — the why, real rejected alternatives, and assumptions — before calling review_changes.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: guide }],
+    }),
+  );
+
+  // Prompt: the reviewer can invoke the guide as a slash command to steer the
+  // change-making agent toward authoring intent honestly.
+  server.registerPrompt(
+    "author_intent",
+    {
+      title: "Author review intent",
+      description:
+        "Load the contract for authoring an honest .review/intent.json before review.",
+    },
+    () => ({
+      messages: [{ role: "user", content: { type: "text", text: guide } }],
+    }),
   );
 
   const transport = new StdioServerTransport();

@@ -7,6 +7,7 @@ const model: ReviewModel = {
   tldr: "Five-second headline of the change.",
   overall: "Why this exists with `code` and **bold**.",
   base: "main",
+  diffScope: { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] },
   diagrams: {
     class: "classDiagram\n  Foo <|-- Bar",
     sequence: "sequenceDiagram\n  A->>B: hi",

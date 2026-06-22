@@ -589,4 +589,19 @@ describe("renderHtml pin-to-rail layout", () => {
     expect(html).toContain("has-pins");             // shell toggle
     expect(html).toContain("review-intent:pinned"); // per-change persistence key
   });
+
+  it("uses an inline SVG pin glyph, not an emoji", () => {
+    expect(html).toContain('<svg class="pin-ico"');
+    expect(html).not.toContain("📌");
+  });
+
+  it("constrains the movable wrapper width so the pin lands on the block corner", () => {
+    // Regression guard: a full-width wrapper threw the absolutely-positioned pin
+    // button into the right margin once has-pins switched off.
+    expect(html).toContain(".movable { position: relative; max-width: var(--maxw); margin: 0 auto; }");
+  });
+
+  it("aligns the uncommitted banner to the shell gutter in the dashboard", () => {
+    expect(html).toContain("body.has-pins .diff-scope-banner");
+  });
 });

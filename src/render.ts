@@ -90,7 +90,9 @@ function movable(key: string, html: string): string {
 }
 
 function pinButton(): string {
-  return `<button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button>`;
+  // Inline pushpin glyph (stroked, inherits currentColor) instead of a 📌 emoji,
+  // so it sits cleanly with the UI type and recolours with the pinned state.
+  return `<button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button>`;
 }
 
 /** Static, dependency-free enhancement: move pinned blocks into the sticky rail
@@ -100,7 +102,7 @@ function pinButton(): string {
  *  untouched. Each block keeps a comment anchor marking its home slot so it can
  *  always be restored in the original order. */
 function pinScript(model: ReviewModel): string {
-  const KEY = `review-intent:pinned:${model.title}@${model.base}`;
+  const KEY = `review-intent:pinned:v2:${model.title}@${model.base}`;
   return `<script>
   (function () {
     var rail = document.getElementById("rail");
@@ -109,7 +111,7 @@ function pinScript(model: ReviewModel): string {
     // Declaration order — the rail stacks pinned blocks in this order regardless
     // of the order the reader pinned them, so the rail stays predictable.
     var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
-    var wide = window.matchMedia("(min-width: 1920px)");
+    var wide = window.matchMedia("(min-width: 1500px)");
     var nodes = {}, anchors = {};
     document.querySelectorAll(".movable").forEach(function (el) {
       var k = el.getAttribute("data-movable");
@@ -120,7 +122,10 @@ function pinScript(model: ReviewModel): string {
     });
     var pinned;
     try { pinned = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
-    if (!Array.isArray(pinned)) pinned = ["file-index"];
+    // Default on wide screens: dock the whole overview into the rail so the diffs
+    // get the main column without the reader having to pin anything. Empty blocks
+    // (e.g. no tests/diagrams) are filtered out below. Unpin to customize.
+    if (!Array.isArray(pinned)) pinned = ["vitals", "review-first", "file-index", "blast", "visuals"];
     pinned = pinned.filter(function (k) { return nodes[k]; });
     function apply() {
       var isWide = wide.matches;
@@ -1185,7 +1190,7 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
-/** A reviewer annotation affordance: a 💬 Comment box and a ❓ Ask box, side by
+/** A reviewer annotation affordance: a Comment box and an Ask box, side by
  *  side, each a hidden textarea the script persists. Pure markup; the textareas
  *  carry the data the assembled prompt is built from. `cid` is the comment's
  *  localStorage key (the question reuses it with a `q:` prefix); `ref` is the
@@ -1196,11 +1201,11 @@ function annotateBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: stri
   const where = kind === "hunk" ? "this hunk" : "this file";
   return `<div class="cbox-group" data-ckind="${kind}">
     <div class="cbox" data-akind="comment">
-      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬 Comment</button>
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">Comment</button>
       <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="comment" placeholder="Note to the agent about ${where}…"></textarea>
     </div>
     <div class="cbox cbox-q" data-akind="question">
-      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">❓ Ask</button>
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">Ask</button>
       <textarea class="cinput" data-cid="q:${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="question" placeholder="Question for the agent about ${where}…"></textarea>
     </div>
   </div>`;
@@ -1263,7 +1268,7 @@ function renderFeedbackPanel(model: ReviewModel): string {
   if (model.files.length === 0) return "";
   return `<section class="review-feedback" id="feedback">
   <h2>Review feedback</h2>
-  <p class="rf-hint">Comment (💬) or ask a question (❓) on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
+  <p class="rf-hint">Comment or ask a question on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
   <label class="fb-general">
     <span class="fb-general-lbl">Overall comment</span>
     <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" data-akind="comment" placeholder="Overall feedback on the change set…"></textarea>
@@ -1335,6 +1340,8 @@ const CSS = `
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
   --maxw: 1080px;
+  /* Width of the two-pane "dashboard" shell on wide screens (rail + content). */
+  --shellw: 2400px;
   /* derived (were hard-coded literals; defaults reproduce paper exactly) */
   --add-border: #c7e2cd; --del-border: #eccac4;
   --warn-border: #e6d8a8; --accent-border: #cfdcef;
@@ -1820,29 +1827,40 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 
 /* ── Pin-to-rail: movable blocks + a sticky sidebar on wide screens ── */
-.movable { position: relative; }
+/* Center the wrapper to the same column width as the section it wraps, so the
+   absolutely-positioned pin button lands on the block's corner rather than out
+   in the full-width right margin. has-pins mode overrides this to fill its column. */
+.movable { position: relative; max-width: var(--maxw); margin: 0 auto; }
 .rail:empty { display: none; }
 /* The pin affordance only exists where there's a rail to pin to (wide screens). */
 .pin-btn { display: none; }
 
-@media (min-width: 1920px) {
+@media (min-width: 1500px) {
   .pin-btn {
     display: inline-flex; align-items: center; justify-content: center;
     position: absolute; top: 12px; right: 14px; z-index: 3;
-    font: 12px/1 var(--mono); cursor: pointer;
+    color: var(--muted); cursor: pointer;
     background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px;
-    padding: 4px 6px; opacity: 0; transition: opacity .15s, border-color .15s;
+    padding: 5px; opacity: 0; transition: opacity .15s, border-color .15s, color .15s, background .15s;
   }
+  .pin-ico { display: block; }
   .movable:hover > .pin-btn, .pin-btn:focus-visible { opacity: 1; }
-  .pin-btn[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
+  .pin-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .pin-btn[aria-pressed="true"] { opacity: 1; color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
   /* The two-pane shell engages only once something is pinned; with an empty
      rail the page stays the calm centred column it is below this width. */
-  body.has-pins .page-head { max-width: 1840px; }
-  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1840px) / 2 + 40px)); }
+  body.has-pins .page-head { max-width: var(--shellw); }
+  body.has-pins .topbar { padding-inline: max(18px, calc((100% - var(--shellw)) / 2 + 40px)); }
+  /* Align the alert bar with the shell's left gutter instead of the old centred
+     column, so it lines up with the masthead and the rail below it. */
+  body.has-pins .diff-scope-banner {
+    max-width: none;
+    margin-inline: max(40px, calc((100% - var(--shellw)) / 2 + 40px));
+  }
   body.has-pins .layout {
-    max-width: 1840px; margin: 0 auto; padding: 0 40px;
-    display: grid; grid-template-columns: 320px minmax(0, 1fr);
+    max-width: var(--shellw); margin: 0 auto; padding: 0 40px;
+    display: grid; grid-template-columns: 460px minmax(0, 1fr);
     gap: 36px; align-items: start;
   }
   body.has-pins .rail {
@@ -1851,6 +1869,9 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     display: flex; flex-direction: column; gap: 18px;
   }
   body.has-pins .content { min-width: 0; }
+  /* In the shell, movables fill their column/rail instead of self-centering. */
+  body.has-pins .content > .movable,
+  body.has-pins .rail > .movable { max-width: none; margin: 0; }
   /* Inside the shell, blocks fill their column instead of self-centring. */
   body.has-pins .content > .movable > section,
   body.has-pins .content > .movable > nav,
@@ -1870,6 +1891,9 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 
 /* ── Review annotations (comments + questions) ── */
 .cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* File-level Comment/Ask row sits directly in the unpadded .file-body — inset it
+   to align with the .file-intent box above and give the hunk below breathing room. */
+.file-body > .cbox-group { padding: 0 16px 14px; }
 .hunk-notes .cbox-group { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
 .cbox { display: inline-flex; }
 .cbox.open { flex-basis: 100%; flex-direction: column; }

@@ -222,8 +222,7 @@ function renderDiffScopeBanner(model: ReviewModel): string {
   const parts: string[] = [];
   if (u) parts.push(`${u} file${u === 1 ? "" : "s"} with uncommitted changes`);
   if (t) parts.push(`${t} untracked file${t === 1 ? "" : "s"}`);
-  return `<style>.diff-scope-banner{margin:0 auto 18px;max-width:var(--maxw);padding:10px 14px;border-radius:8px;background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn);font-size:14px;}</style>
-<div class="diff-scope-banner" role="note">⚠ This review includes ${parts.join(
+  return `<div class="diff-scope-banner" role="note">⚠ This review includes ${parts.join(
     " + ",
   )} — not yet committed (relative to HEAD).</div>`;
 }
@@ -1790,6 +1789,11 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .fbadge-hot { color: var(--del); border-color: var(--del-border); background: var(--del-soft); }
 .fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
 .fbadge-uncommitted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.diff-scope-banner {
+  max-width: var(--maxw); margin: 0 auto 18px; padding: 10px 14px;
+  border-radius: 8px; background: var(--warn-soft); color: var(--warn);
+  border: 1px solid var(--warn); font-size: 14px;
+}
 .viewed-toggle {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);

@@ -540,7 +540,7 @@ describe("renderHtml with duplicate file paths", () => {
 describe("renderHtml diff scope", () => {
   it("omits the banner when the tree is clean", () => {
     const html = renderHtml(model);
-    expect(html).not.toContain("diff-scope-banner");
+    expect(html).not.toContain('class="diff-scope-banner"');
   });
 
   it("renders the banner with counts and per-file badges when dirty", () => {

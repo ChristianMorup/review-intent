@@ -101,7 +101,13 @@ export function getDiff(cwd: string, base: string): { text: string; scope: DiffS
   }
 
   const mergeBase = git(["merge-base", base, "HEAD"], cwd).trim();
-  const { uncommittedFiles, untrackedFiles } = parseGitStatus(git(["status", "--porcelain"], cwd));
+  // `--untracked-files=all` lists each untracked file individually; without it
+  // git collapses an untracked directory to a single `dir/` entry, which would
+  // both break the per-file `--no-index` call below (it looks for `dir/null`)
+  // and silently drop every file inside that directory.
+  const { uncommittedFiles, untrackedFiles } = parseGitStatus(
+    git(["status", "--porcelain", "--untracked-files=all"], cwd),
+  );
   const dirty = uncommittedFiles.length > 0 || untrackedFiles.length > 0;
 
   if (!dirty) {

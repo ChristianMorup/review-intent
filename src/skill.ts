@@ -182,6 +182,24 @@ sequenceDiagram
 Omit a diagram if the change genuinely has no structural or sequential story —
 don't draw a trivial two-box diagram to fill the slot.
 
+### Reviewing from a worktree
+
+If you did the work in a git worktree (common for agent-driven changes), a few
+things matter:
+
+- **Run \`review-intent\` from the worktree's own root.** It keys everything off
+  the current directory — the diff it produces, the artifact it reads, and the
+  repo scans for reach and complexity. Running it from the main checkout reviews
+  the wrong tree.
+- **You don't need to commit first.** If the working tree is dirty, review-intent
+  folds your uncommitted *and* untracked changes into the diff automatically and
+  flags those files (a banner up top, an \`uncommitted\`/\`untracked\` badge per
+  file). What you ultimately hand off for *merge* is still the committed history —
+  the badges make the difference visible so the reviewer is never misled.
+- **The base resolves automatically.** \`main\`/\`master\` are shared across linked
+  worktrees, so they resolve from inside a worktree with no extra flags. Pass
+  \`--base <ref>\` if your worktree forked from a different branch.
+
 ## After writing it
 
 Offer to render — never auto-launch:
@@ -189,8 +207,9 @@ Offer to render — never auto-launch:
 > I've written the review intent to \`.review/intent.json\`. Want me to open the
 > side-by-side review? (\`review-intent\`)
 
-If the user accepts, run \`review-intent\` via Bash from the repo root. It diffs
-the current branch against main and opens the rendered page in the browser.
+If the user accepts, run \`review-intent\` via Bash from the root of the working
+tree you made the changes in (the worktree root, if you used one). It diffs the
+current branch against main and opens the rendered page in the browser.
 
 ## Why this exists
 

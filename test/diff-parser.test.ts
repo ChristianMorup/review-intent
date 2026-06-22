@@ -58,3 +58,22 @@ describe("parseDiffText", () => {
     expect(firstHunk.lines.every((l) => !l.content.endsWith("\r"))).toBe(true);
   });
 });
+
+describe("parseDiffText on a --no-index untracked block", () => {
+  const noIndex = readFileSync(
+    join(import.meta.dirname, "fixtures", "no-index-untracked.diff"),
+    "utf8",
+  );
+  const files = parseDiffText(noIndex);
+
+  it("parses the untracked file as an added file at its repo-relative path", () => {
+    expect(files).toHaveLength(1);
+    expect(files[0].path).toBe("src/new.ts");
+    expect(files[0].status).toBe("added");
+  });
+
+  it("captures the added lines", () => {
+    const adds = files[0].hunks[0].lines.filter((l) => l.type === "add");
+    expect(adds.map((l) => l.content)).toEqual(["line one", "line two"]);
+  });
+});

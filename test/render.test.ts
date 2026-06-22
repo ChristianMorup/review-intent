@@ -7,6 +7,7 @@ const model: ReviewModel = {
   tldr: "Five-second headline of the change.",
   overall: "Why this exists with `code` and **bold**.",
   base: "main",
+  diffScope: { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] },
   diagrams: {
     class: "classDiagram\n  Foo <|-- Bar",
     sequence: "sequenceDiagram\n  A->>B: hi",
@@ -533,6 +534,30 @@ describe("renderHtml with duplicate file paths", () => {
     expect(html).toContain("BETA_LINE");
     expect(html).toContain("alpha why");
     expect(html).toContain("beta why");
+  });
+});
+
+describe("renderHtml diff scope", () => {
+  it("omits the banner when the tree is clean", () => {
+    const html = renderHtml(model);
+    expect(html).not.toContain('class="diff-scope-banner"');
+  });
+
+  it("renders the banner with counts and per-file badges when dirty", () => {
+    const dirty: ReviewModel = {
+      ...model,
+      diffScope: { includesUncommitted: true, uncommittedFiles: ["src/a.ts"], untrackedFiles: ["src/b.ts"] },
+      files: [
+        { path: "src/a.ts", status: "modified", uncommitted: true, what: "w", why: "y", unmatchedIntents: [], hunks: [] },
+        { path: "src/b.ts", status: "added", untracked: true, what: "w", why: "y", unmatchedIntents: [], hunks: [] },
+      ],
+    };
+    const html = renderHtml(dirty);
+    expect(html).toContain("diff-scope-banner");
+    expect(html).toContain("1 file with uncommitted changes");
+    expect(html).toContain("1 untracked file");
+    expect(html).toContain(">uncommitted<");
+    expect(html).toContain(">untracked<");
   });
 });
 

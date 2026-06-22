@@ -108,6 +108,10 @@ export interface AnnotatedHunk extends DiffHunk {
 export interface AnnotatedFile {
   path: string;
   status: DiffFile["status"];
+  /** True when this file carries uncommitted (staged/unstaged) changes vs HEAD. */
+  uncommitted?: boolean;
+  /** True when this file is untracked (new, never committed). */
+  untracked?: boolean;
   /** undefined when the agent wrote no entry for this changed file (a gap). */
   what?: string;
   why?: string;
@@ -211,6 +215,17 @@ export interface ReachModel {
   truncatedNote?: string;
 }
 
+/** What the rendered diff covers beyond committed history. Computed by git.ts
+ *  from the working-tree state; plain data so match/render stay pure. */
+export interface DiffScope {
+  /** True when the diff includes uncommitted working-tree changes. */
+  includesUncommitted: boolean;
+  /** Tracked files with staged/unstaged changes folded in (posix, repo-relative). */
+  uncommittedFiles: string[];
+  /** Untracked-not-ignored files folded in via --no-index (posix, repo-relative). */
+  untrackedFiles: string[];
+}
+
 /** How much of the change set carries agent-authored intent (measured against
  *  the completeness contract). Meaningful even under `--allow-gaps`. */
 export interface IntentCoverage {
@@ -226,6 +241,8 @@ export interface ReviewModel {
   tldr: string;
   overall: string;
   base: string;
+  /** What the rendered diff covers beyond committed history (banner + badges). */
+  diffScope: DiffScope;
   diagrams: { class?: string; sequence?: string };
   risks: Risk[];
   /** Agent-described test cases (claimed; pure display, never measured). */

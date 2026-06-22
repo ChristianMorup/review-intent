@@ -104,7 +104,16 @@ in the loop without ever pasting a prompt. Close the tab without deciding and th
 tool returns a no-decision result (detected by a liveness heartbeat) rather than
 hanging the agent — an open tab can take as long as you need.
 
-Register it with Claude Code (`~/.claude.json` or a project `.mcp.json`):
+Register it the easy way — from the repo you want reviews in:
+
+```sh
+review-intent mcp install      # merges a review-intent entry into ./.mcp.json
+review-intent mcp uninstall    # removes just that entry
+```
+
+`mcp install` writes/merges the project `.mcp.json`, preserving any other servers
+(`--force` overwrites a differing `review-intent` entry). Prefer to wire it by
+hand — or register it at user scope in `~/.claude.json`? It's the same entry:
 
 ```json
 {

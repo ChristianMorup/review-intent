@@ -171,9 +171,12 @@ describe("serveAndBlock round-trip", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("you can close this tab");
 
-    const submission = await blocked;
+    const result = await blocked;
     cap.restore();
-    expect(submission).toEqual({ decision: "request-changes", prompt: "tighten the loop" });
+    expect(result).toEqual({
+      kind: "submitted",
+      submission: { decision: "request-changes", prompt: "tighten the loop" },
+    });
   });
 
   it("rejects a malformed /submit body with 400 and keeps blocking", async () => {
@@ -196,8 +199,59 @@ describe("serveAndBlock round-trip", () => {
     });
     expect(ok.status).toBe(200);
 
-    const submission = await blocked;
+    const result = await blocked;
     cap.restore();
-    expect(submission).toEqual({ decision: "approve", prompt: "" });
+    expect(result).toEqual({
+      kind: "submitted",
+      submission: { decision: "approve", prompt: "" },
+    });
+  });
+
+  it("resolves as abandoned when the page beacons /cancel", async () => {
+    const cap = captureUrl();
+    const blocked = serveAndBlock("<title>x</title>");
+    const base = await waitForUrl(cap.url);
+
+    await fetch(base); // page connects
+    const res = await fetch(base + "cancel", { method: "POST" });
+    expect(res.status).toBe(204);
+
+    const result = await blocked;
+    cap.restore();
+    expect(result).toEqual({ kind: "abandoned" });
+  });
+
+  it("resolves as abandoned when heartbeats stop after the page connected", async () => {
+    const cap = captureUrl();
+    // Tiny liveness window so the test is fast and deterministic.
+    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = await waitForUrl(cap.url);
+
+    await fetch(base); // page connects, then sends no heartbeats
+    const result = await blocked;
+    cap.restore();
+    expect(result).toEqual({ kind: "abandoned" });
+  });
+
+  it("does not abandon while heartbeats keep arriving, then accepts a submit", async () => {
+    const cap = captureUrl();
+    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = await waitForUrl(cap.url);
+
+    await fetch(base);
+    // Beat a few times across more than one grace window — must NOT abandon.
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 60));
+      await fetch(base + "heartbeat", { method: "POST" });
+    }
+    await fetch(base + "submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approve", prompt: "ok" }),
+    });
+
+    const result = await blocked;
+    cap.restore();
+    expect(result).toEqual({ kind: "submitted", submission: { decision: "approve", prompt: "ok" } });
   });
 });

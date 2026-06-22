@@ -100,7 +100,9 @@ stdio server that exposes one tool, `review_changes`. An agent (e.g. Claude Code
 calls it; the tool renders the branch diff (`base...HEAD`) as a review page, opens it in your browser,
 and **blocks until you click _Approve_ or _Request changes_** — then returns your
 decision plus the assembled feedback straight back to the agent. The human stays
-in the loop without ever pasting a prompt.
+in the loop without ever pasting a prompt. Close the tab without deciding and the
+tool returns a no-decision result (detected by a liveness heartbeat) rather than
+hanging the agent — an open tab can take as long as you need.
 
 Register it with Claude Code (`~/.claude.json` or a project `.mcp.json`):
 

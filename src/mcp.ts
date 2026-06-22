@@ -36,6 +36,15 @@ export interface Submission {
   prompt: string;
 }
 
+/**
+ * The outcome of a review session: either the reviewer submitted a decision, or
+ * they closed the page without one (abandoned). Distinguishing the two keeps the
+ * agent from ever reading a closed-without-deciding review as an approval.
+ */
+export type ReviewResult =
+  | { kind: "submitted"; submission: Submission }
+  | { kind: "abandoned" };
+
 const SubmissionSchema = z.object({
   decision: z.union([z.literal("approve"), z.literal("request-changes")]),
   prompt: z.string(),
@@ -83,22 +92,66 @@ function readPackageVersion(): string {
 
 /**
  * Render the submit-mode HTML on an ephemeral local server, open the browser,
- * and block until the reviewer POSTs a decision to /submit. Same-origin, so no
- * CORS. All human-facing output goes to stderr — stdout is the MCP transport's.
+ * and resolve when the reviewer either submits a decision (POST /submit) or
+ * abandons the review by closing the tab. Same-origin, so no CORS. All
+ * human-facing output goes to stderr — stdout is the MCP transport's.
  *
- * Exported for the round-trip test, which suppresses the browser launch by
- * mocking `open`; production callers always launch it.
+ * Abandonment is detected by liveness, not an arbitrary duration cap: the page
+ * heartbeats while it's open (and beacons /cancel on unload). Once the page has
+ * connected, a gap longer than `liveGraceMs` with no heartbeat means the tab is
+ * gone, so the agent is unblocked with { kind: "abandoned" } rather than hanging
+ * forever. An open-but-idle tab keeps heartbeating, so a slow human review is
+ * never cut short.
+ *
+ * Exported for tests, which suppress the browser launch by mocking `open` and
+ * shrink the liveness timings.
  */
-export function serveAndBlock(html: string): Promise<Submission> {
-  return new Promise<Submission>((resolve, reject) => {
+export function serveAndBlock(
+  html: string,
+  opts: { liveGraceMs?: number; checkMs?: number } = {},
+): Promise<ReviewResult> {
+  const liveGraceMs = opts.liveGraceMs ?? 12_000;
+  const checkMs = opts.checkMs ?? 3_000;
+  return new Promise<ReviewResult>((resolve, reject) => {
     let settled = false;
+    let connected = false;
+    let lastSeen = Date.now();
+    let liveness: ReturnType<typeof setInterval> | undefined;
+
+    function finish(result: ReviewResult): void {
+      if (settled) return;
+      settled = true;
+      if (liveness) clearInterval(liveness);
+      server.close();
+      resolve(result);
+    }
+
     const server = createServer((req, res) => {
       const method = req.method ?? "GET";
       const url = req.url ?? "/";
 
       if (method === "GET" && (url === "/" || url.startsWith("/?"))) {
+        connected = true;
+        lastSeen = Date.now();
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(html);
+        return;
+      }
+
+      // Liveness ping from the open page — proof the tab is still there.
+      if (method === "POST" && url === "/heartbeat") {
+        connected = true;
+        lastSeen = Date.now();
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      // Unload beacon — the reviewer closed the tab without deciding.
+      if (method === "POST" && url === "/cancel") {
+        res.writeHead(204);
+        res.end();
+        finish({ kind: "abandoned" });
         return;
       }
 
@@ -123,11 +176,7 @@ export function serveAndBlock(html: string): Promise<Submission> {
               "<body style=\"font:16px/1.5 system-ui,sans-serif;padding:3rem;color:#211f1b\">" +
               "<p>Review submitted — you can close this tab.</p>",
           );
-          if (!settled) {
-            settled = true;
-            server.close();
-            resolve(submission);
-          }
+          finish({ kind: "submitted", submission });
         });
         // A client that aborts mid-body emits 'error' on the request stream;
         // without a listener Node would throw in the http callback. Fail the
@@ -148,6 +197,7 @@ export function serveAndBlock(html: string): Promise<Submission> {
     server.on("error", (err) => {
       if (!settled) {
         settled = true;
+        if (liveness) clearInterval(liveness);
         reject(err);
       }
     });
@@ -163,6 +213,13 @@ export function serveAndBlock(html: string): Promise<Submission> {
           `review-intent mcp: could not open browser (${(err as Error).message}); open ${reviewUrl} manually\n`,
         );
       });
+      // Once the page has connected, a heartbeat gap past the grace window means
+      // the tab was closed — unblock the agent instead of waiting forever.
+      liveness = setInterval(() => {
+        if (connected && Date.now() - lastSeen > liveGraceMs) {
+          finish({ kind: "abandoned" });
+        }
+      }, checkMs);
     });
   });
 }
@@ -229,12 +286,12 @@ export async function runMcp(_argv: string[]): Promise<void> {
 
       const html = renderHtml(build.model, { submit: true });
       try {
-        const submission = await serveAndBlock(html);
-        return {
-          content: [
-            { type: "text", text: formatToolResult(submission.decision, submission.prompt) },
-          ],
-        };
+        const result = await serveAndBlock(html);
+        const text =
+          result.kind === "abandoned"
+            ? "The reviewer closed the review without submitting a decision — no approval was given. Re-offer the review or ask how they'd like to proceed."
+            : formatToolResult(result.submission.decision, result.submission.prompt);
+        return { content: [{ type: "text", text }] };
       } catch (err) {
         return {
           content: [

@@ -2171,6 +2171,17 @@ ${submit ? `
     var approveBtn = document.querySelector(".fb-approve");
     var requestBtn = document.querySelector(".fb-request");
     var sent = document.querySelector(".fb-sent");
+    var done = false;
+    // Heartbeat while the page is open so the server can tell a slow review
+    // (tab still open) from an abandoned one (tab closed). Stops once submitted.
+    var beat = setInterval(function () {
+      if (!done) fetch("/heartbeat", { method: "POST" }).catch(function () {});
+    }, 4000);
+    // Fast-path abandonment signal: tell the server immediately on tab close so
+    // it need not wait out the heartbeat grace window.
+    window.addEventListener("pagehide", function () {
+      if (!done && navigator.sendBeacon) navigator.sendBeacon("/cancel");
+    });
     function send(decision) {
       assemble();
       var prompt = out ? out.value : "";
@@ -2181,6 +2192,8 @@ ${submit ? `
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision: decision, prompt: prompt })
       }).then(function () {
+        done = true;
+        clearInterval(beat);
         if (sent) { sent.textContent = "Sent — you can close this tab"; sent.hidden = false; }
       }).catch(function () {
         if (approveBtn) approveBtn.disabled = false;

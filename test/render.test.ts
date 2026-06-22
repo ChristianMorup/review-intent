@@ -629,6 +629,9 @@ describe("renderHtml submit flag (MCP tool mode)", () => {
     expect(sub).toContain("Sent — you can close this tab");
     expect(sub).toContain('send("approve")');
     expect(sub).toContain('send("request-changes")');
+    // Liveness wiring so the server can detect an abandoned (closed) tab.
+    expect(sub).toContain('"/heartbeat"');
+    expect(sub).toContain('navigator.sendBeacon("/cancel")');
   });
 
   it("suppresses the submit bar on an empty diff even when submit is true", () => {

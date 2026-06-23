@@ -14,6 +14,7 @@ import {
   authoringGuide,
   openReviewSession,
   waitForEvent,
+  deliverAnswer,
 } from "../src/mcp.js";
 
 // Mirrors complexity.test.ts: only the PURE exports are unit-tested. The http
@@ -298,6 +299,129 @@ describe("review session round-trip", () => {
     expect(await waitForEvent("sid-does-not-exist")).toEqual({
       kind: "abandoned",
       sessionId: "sid-does-not-exist",
+    });
+  });
+
+  it("turns a POST /ask into a question event", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
+
+    await fetch(base);
+    const res = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:1", ref: "src/a.ts @ L1", question: "why?" }),
+    });
+    expect(res.status).toBe(204);
+
+    cap.restore();
+    expect(await event).toEqual({
+      kind: "question",
+      sessionId,
+      questionId: "q:a:1",
+      ref: "src/a.ts @ L1",
+      question: "why?",
+    });
+    // Clean up the still-open session so it doesn't leak across tests.
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("rejects a malformed /ask body with 400 and keeps the session open", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
+
+    await fetch(base);
+    const bad = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{ not json",
+    });
+    expect(bad.status).toBe(400);
+
+    const good = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:1", ref: "r", question: "q" }),
+    });
+    expect(good.status).toBe(204);
+
+    cap.restore();
+    expect((await event).kind).toBe("question");
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("pushes an answer to the open /events stream via deliverAnswer", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    // Open the SSE stream and read the first answer frame.
+    const ac = new AbortController();
+    const streamP = fetch(base + "events", { signal: ac.signal });
+    // Give the server a tick to register the stream.
+    await new Promise((r) => setTimeout(r, 30));
+
+    const ok = deliverAnswer(sessionId, "q:a:1", "because the cache is request-scoped");
+    expect(ok).toBe(true);
+
+    const stream = await streamP;
+    const reader = stream.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    expect(text).toContain("event: answer");
+    expect(text).toContain("q:a:1");
+    expect(text).toContain("because the cache is request-scoped");
+
+    ac.abort();
+    cap.restore();
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("deliverAnswer returns false for an unknown session", () => {
+    expect(deliverAnswer("sid-nope", "q", "a")).toBe(false);
+  });
+
+  it("queues a question that arrives with no waiter, then drains it on the next waitForEvent", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    await fetch(base);
+
+    // No waitForEvent parked yet: the ask must queue, not be lost.
+    await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:2", ref: "r", question: "queued?" }),
+    });
+
+    const event = await waitForEvent(sessionId);
+    cap.restore();
+    expect(event).toEqual({ kind: "question", sessionId, questionId: "q:a:2", ref: "r", question: "queued?" });
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("returns a submit that arrives while the agent is away (no waiter parked)", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    await fetch(base);
+
+    // Submit with nobody parked — must be stashed and returned on next wait.
+    await fetch(base + "submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approve", prompt: "lgtm" }),
+    });
+
+    cap.restore();
+    expect(await waitForEvent(sessionId)).toEqual({
+      kind: "submitted",
+      sessionId,
+      submission: { decision: "approve", prompt: "lgtm" },
     });
   });
 });

@@ -243,6 +243,43 @@ function handleRequest(
     return;
   }
 
+  if (method === "GET" && url === "/events") {
+    session.connected = true;
+    session.lastSeen = Date.now();
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    session.sse.add(res);
+    req.on("close", () => session.sse.delete(res));
+    return;
+  }
+
+  if (method === "POST" && url === "/ask") {
+    readBody(req, res, (body) => {
+      let ask: AskQuestion;
+      try {
+        ask = parseAsk(body);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Invalid question");
+        process.stderr.write(`review-intent mcp: ignored malformed /ask body: ${(err as Error).message}\n`);
+        return;
+      }
+      res.writeHead(204);
+      res.end();
+      resolveEvent(sessionId, {
+        kind: "question",
+        sessionId,
+        questionId: ask.questionId,
+        ref: ask.ref,
+        question: ask.question,
+      });
+    });
+    return;
+  }
+
   res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
   res.end("Not found");
 }
@@ -329,6 +366,23 @@ export function waitForEvent(sessionId: string): Promise<ReviewEvent> {
   return new Promise<ReviewEvent>((resolve) => {
     session.waiter = resolve;
   });
+}
+
+/**
+ * Push an answer to every open SSE stream for the session. Returns false when
+ * the session is gone or already settled (the page is no longer listening), so
+ * the caller can still fall through to waitForEvent for a stashed decision.
+ */
+export function deliverAnswer(sessionId: string, questionId: string, answer: string): boolean {
+  const session = sessions.get(sessionId);
+  if (!session || session.settled) return false;
+  // JSON.stringify yields a single line, so the SSE `data:` frame stays intact
+  // even when the answer contains newlines.
+  const payload = JSON.stringify({ questionId, answer });
+  for (const res of session.sse) {
+    res.write(`event: answer\ndata: ${payload}\n\n`);
+  }
+  return true;
 }
 
 // ── Side-effecting runner (not unit-tested; manual smoke test) ───────────────

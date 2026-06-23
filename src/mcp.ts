@@ -96,6 +96,33 @@ export function formatToolResult(decision: Decision, prompt: string): string {
   return `Reviewer decision: ${decision}\n\n${prompt}`;
 }
 
+export type ReviewEvent =
+  | { kind: "question"; sessionId: string; questionId: string; ref: string; question: string }
+  | { kind: "submitted"; sessionId: string; submission: Submission }
+  | { kind: "abandoned"; sessionId: string };
+
+const ABANDONED_TEXT =
+  "The reviewer closed the review without submitting a decision — no approval was given. Re-offer the review or ask how they'd like to proceed.";
+
+/** Shape a review event into the MCP tool-result text the agent acts on. */
+export function formatEventResult(event: ReviewEvent): string {
+  switch (event.kind) {
+    case "question":
+      return (
+        `The reviewer asked a question (id ${event.questionId}) about ${event.ref}:\n\n` +
+        `${event.question}\n\n` +
+        `Answer it by calling answer_review_question with sessionId="${event.sessionId}", ` +
+        `questionId="${event.questionId}", and your answer. Your answer appears live on the ` +
+        `still-open review page and the review continues. Keep answering questions until the ` +
+        `reviewer submits a decision.`
+      );
+    case "submitted":
+      return formatToolResult(event.submission.decision, event.submission.prompt);
+    case "abandoned":
+      return ABANDONED_TEXT;
+  }
+}
+
 // ── Side-effecting runner (not unit-tested; manual smoke test) ───────────────
 
 function readPackageVersion(): string {

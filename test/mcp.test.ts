@@ -10,6 +10,7 @@ import {
   parseSubmission,
   parseAsk,
   formatToolResult,
+  formatEventResult,
   authoringGuide,
   serveAndBlock,
 } from "../src/mcp.js";
@@ -43,6 +44,37 @@ describe("formatToolResult", () => {
       "Reviewer decision: request-changes\n\nChanges requested, but no specific feedback was provided.";
     expect(formatToolResult("request-changes", "")).toBe(expected);
     expect(formatToolResult("request-changes", "   ")).toBe(expected);
+  });
+});
+
+describe("formatEventResult", () => {
+  it("turns a question event into instructions naming the session + question id", () => {
+    const text = formatEventResult({
+      kind: "question",
+      sessionId: "sid-1",
+      questionId: "q:src/a.ts:12",
+      ref: "src/a.ts @ L12",
+      question: "Why drop the cache here?",
+    });
+    expect(text).toContain("Why drop the cache here?");
+    expect(text).toContain("src/a.ts @ L12");
+    expect(text).toContain("answer_review_question");
+    expect(text).toContain("sid-1");
+    expect(text).toContain("q:src/a.ts:12");
+  });
+
+  it("delegates a submitted event to formatToolResult", () => {
+    const text = formatEventResult({
+      kind: "submitted",
+      sessionId: "sid-1",
+      submission: { decision: "request-changes", prompt: "do X" },
+    });
+    expect(text).toBe(formatToolResult("request-changes", "do X"));
+  });
+
+  it("returns the no-decision message for an abandoned event", () => {
+    const text = formatEventResult({ kind: "abandoned", sessionId: "sid-1" });
+    expect(text).toContain("without submitting a decision");
   });
 });
 

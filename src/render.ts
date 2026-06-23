@@ -1803,6 +1803,11 @@ ${submit ? `
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ questionId: qid, ref: ref, question: q })
+        }).then(function (r) {
+          if (!r.ok) {
+            ask.disabled = false; ask.textContent = "Ask the agent now";
+            slot.className = "q-answer"; slot.textContent = "Server error (" + r.status + ") — the review session may have expired.";
+          }
         }).catch(function () {
           ask.disabled = false; ask.textContent = "Ask the agent now";
           slot.className = "q-answer"; slot.textContent = "Could not reach the review server — is it still running?";

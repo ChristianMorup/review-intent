@@ -387,6 +387,7 @@ describe("live Q&A (submit mode)", () => {
     const plain = renderHtml(model);
     expect(plain).not.toContain('new EventSource("/events")');
     expect(plain).not.toContain('"/ask"');
+    expect(plain).not.toContain('"q-ask"');
   });
 });
 

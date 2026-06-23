@@ -12,7 +12,8 @@ import {
   formatToolResult,
   formatEventResult,
   authoringGuide,
-  serveAndBlock,
+  openReviewSession,
+  waitForEvent,
 } from "../src/mcp.js";
 
 // Mirrors complexity.test.ts: only the PURE exports are unit-tested. The http
@@ -175,9 +176,7 @@ describe("reviewToolInputShape", () => {
   });
 });
 
-describe("serveAndBlock round-trip", () => {
-  // Capture the "Review page: http://127.0.0.1:<port>/" stderr line to learn
-  // the ephemeral port the server bound to (browser launch is mocked above).
+describe("review session round-trip", () => {
   function captureUrl(): { restore: () => void; url: () => string } {
     let captured = "";
     const orig = process.stderr.write.bind(process.stderr);
@@ -189,35 +188,22 @@ describe("serveAndBlock round-trip", () => {
       if (m) captured = m[1];
       return true;
     }) as typeof process.stderr.write;
-    return {
-      restore: () => {
-        process.stderr.write = orig;
-      },
-      url: () => captured,
-    };
-  }
-
-  async function waitForUrl(get: () => string): Promise<string> {
-    for (let i = 0; i < 100 && !get(); i++) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    return get();
+    return { restore: () => { process.stderr.write = orig; }, url: () => captured };
   }
 
   it("serves the HTML on GET / and resolves with the parsed POST /submit body", async () => {
     const cap = captureUrl();
     const html = "<!DOCTYPE html><title>x</title><body>REVIEW_PAGE_MARKER";
-    const blocked = serveAndBlock(html);
-
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession(html);
+    const base = cap.url();
     expect(base).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
 
-    // GET / returns the submit-mode HTML.
+    const event = waitForEvent(sessionId);
+
     const page = await fetch(base);
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("REVIEW_PAGE_MARKER");
 
-    // POST /submit resolves the blocking promise with the parsed submission.
     const res = await fetch(base + "submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -226,18 +212,19 @@ describe("serveAndBlock round-trip", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("you can close this tab");
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({
+    expect(await event).toEqual({
       kind: "submitted",
+      sessionId,
       submission: { decision: "request-changes", prompt: "tighten the loop" },
     });
   });
 
   it("rejects a malformed /submit body with 400 and keeps blocking", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>");
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
     const bad = await fetch(base + "submit", {
       method: "POST",
@@ -246,55 +233,52 @@ describe("serveAndBlock round-trip", () => {
     });
     expect(bad.status).toBe(400);
 
-    // The server is still up and still blocking; a valid submit then resolves it.
-    const ok = await fetch(base + "submit", {
+    await fetch(base + "submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "approve", prompt: "" }),
     });
-    expect(ok.status).toBe(200);
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({
+    expect(await event).toEqual({
       kind: "submitted",
+      sessionId,
       submission: { decision: "approve", prompt: "" },
     });
   });
 
   it("resolves as abandoned when the page beacons /cancel", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>");
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
-    await fetch(base); // page connects
+    await fetch(base);
     const res = await fetch(base + "cancel", { method: "POST" });
     expect(res.status).toBe(204);
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({ kind: "abandoned" });
+    expect(await event).toEqual({ kind: "abandoned", sessionId });
   });
 
   it("resolves as abandoned when heartbeats stop after the page connected", async () => {
     const cap = captureUrl();
-    // Tiny liveness window so the test is fast and deterministic.
-    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
-    await fetch(base); // page connects, then sends no heartbeats
-    const result = await blocked;
+    await fetch(base);
     cap.restore();
-    expect(result).toEqual({ kind: "abandoned" });
+    expect(await event).toEqual({ kind: "abandoned", sessionId });
   });
 
   it("does not abandon while heartbeats keep arriving, then accepts a submit", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
     await fetch(base);
-    // Beat a few times across more than one grace window — must NOT abandon.
     for (let i = 0; i < 4; i++) {
       await new Promise((r) => setTimeout(r, 60));
       await fetch(base + "heartbeat", { method: "POST" });
@@ -305,8 +289,14 @@ describe("serveAndBlock round-trip", () => {
       body: JSON.stringify({ decision: "approve", prompt: "ok" }),
     });
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({ kind: "submitted", submission: { decision: "approve", prompt: "ok" } });
+    expect(await event).toEqual({ kind: "submitted", sessionId, submission: { decision: "approve", prompt: "ok" } });
+  });
+
+  it("returns abandoned for an unknown session id", async () => {
+    expect(await waitForEvent("sid-does-not-exist")).toEqual({
+      kind: "abandoned",
+      sessionId: "sid-does-not-exist",
+    });
   });
 });

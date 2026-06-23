@@ -27,8 +27,8 @@
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
   --maxw: 1080px;
-  /* Width of the two-pane "dashboard" shell on wide screens (rail + content). */
-  --shellw: 2400px;
+  /* Width of the two-pane shell (sticky file rail + main content column). */
+  --shellw: 1500px;
   /* derived (were hard-coded literals; defaults reproduce paper exactly) */
   --add-border: #c7e2cd; --del-border: #eccac4;
   --warn-border: #e6d8a8; --accent-border: #cfdcef;
@@ -56,21 +56,44 @@ body {
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 
-/* Every top-level band shares one centred measure with hairline separators. */
-.page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans {
-  max-width: var(--maxw); margin: 0 auto; padding: 36px 40px;
+/* ── Two-pane shell: a permanent file rail beside the main column ── */
+.shell {
+  max-width: var(--shellw); margin: 0 auto;
+  display: grid; grid-template-columns: 312px minmax(0, 1fr); align-items: start;
 }
-.blast, .visuals, .tests, .diagrams, .vitals { border-top: 1px solid var(--line); }
+.rail {
+  position: sticky; top: 43px; align-self: start;
+  max-height: calc(100vh - 43px); overflow: auto;
+  border-right: 1px solid var(--line); padding: 24px 20px 40px;
+}
+.main-col { min-width: 0; padding: 0 44px; }
 
-/* Section eyebrows — small, lettered, quiet. The recurring section-head idiom. */
-.band-head h2 {
-  margin: 0 0 22px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-  display: flex; align-items: baseline; gap: 12px;
+/* Reusable section heads — the small lettered eyebrow and a lighter sub-head. */
+.section-eyebrow {
+  font: 700 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em;
+  color: var(--muted); margin: 0 0 16px;
+}
+.section-eyebrow-sub {
+  font: 400 11px/1 var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted);
+}
+.section-subhead {
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); margin: 0 0 14px; display: flex; align-items: center; gap: 10px;
+}
+
+/* Below the rail breakpoint the shell collapses to one column and the rail
+   un-sticks to a banded strip at the top. */
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail {
+    position: static; max-height: 320px; overflow: auto;
+    border-right: 0; border-bottom: 1px solid var(--line); padding: 20px 22px;
+  }
+  .main-col { padding: 0 22px; }
 }
 
 /* ── Masthead ── */
-.page-head { padding-top: 48px; padding-bottom: 40px; }
+.page-head { max-width: 760px; padding: 44px 0 28px; }
 .eyebrow {
   font: 600 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted);
   text-transform: uppercase; margin-bottom: 18px;
@@ -100,18 +123,94 @@ body {
 .overall { color: var(--ink-soft); margin-top: 14px; font-size: 15px; }
 .overall p { margin: 0 0 12px; }
 
-/* ── Vitals: the at-a-glance overview spine ── */
-.vitals {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
-  gap: 1px; background: var(--line); background-clip: content-box;
-  padding-top: 26px; padding-bottom: 26px;
+/* ── File rail · merged spine (priority list + nav in one) ── */
+.spine-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.spine-title {
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
 }
-/* Cells sit on the paper; the 1px grid gap reveals the container's line colour
-   as a hairline between every cell — clean dividers at any column count, no
-   stray edge borders when the grid wraps (the old flex-wrap left those). */
+.spine-count { font: 11px/1 var(--mono); color: var(--muted); }
+.spine-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 16px; line-height: 1.4; }
+.spine-empty { color: var(--muted); font-size: 13px; }
+.spine { display: flex; flex-direction: column; gap: 2px; }
+.spine-row {
+  display: grid; grid-template-columns: 22px 1fr; gap: 3px 10px;
+  padding: 9px; border-radius: 8px; text-decoration: none; color: var(--ink);
+}
+.spine-row:hover { background: var(--surface-2); }
+.spine-row.active { background: var(--accent-soft); }
+.spine-row.viewed { opacity: .5; }
+.spine-row.viewed:hover { opacity: 1; }
+.spine-rank {
+  grid-row: span 2; font: 700 12px/1.4 var(--mono); color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.spine-path { font: 12px/1.35 var(--mono); overflow-wrap: anywhere; }
+.spine-sig { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spine-spark { flex: none; }
+.spine-axis { stroke: var(--line-2); stroke-width: 1; }
+.spine-counts {
+  font: 10.5px/1 var(--mono); color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.spine-chip {
+  font: 700 9px/1.4 var(--mono); border-radius: 4px; padding: 1px 4px;
+}
+.spine-chip-ccn { color: var(--del); background: var(--del-soft); border: 1px solid var(--del-border); }
+.spine-chip-gap { color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warn-border); }
+
+/* ── Verdict line: one measured "where to look" sentence ── */
+.verdict {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; border-radius: 10px; max-width: 760px; margin: 0 0 28px;
+  border: 1px solid var(--line-2); background: var(--surface);
+}
+.verdict-warn { background: var(--del-soft); border-color: var(--del-border); }
+.verdict-ok { background: var(--add-soft); border-color: var(--add-border); }
+.verdict-icon { font-size: 15px; line-height: 1.4; flex: none; margin-top: 1px; }
+.verdict-warn .verdict-icon { color: var(--del); }
+.verdict-ok .verdict-icon { color: var(--add); }
+.verdict-msg { font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+
+/* ── Change summary band: change map + risk ledger, side by side ── */
+.change-summary { margin: 0 0 28px; }
+.cs-grid {
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 18px; align-items: start;
+}
+@media (max-width: 900px) { .cs-grid { grid-template-columns: 1fr; } }
+
+/* ── Deeper analysis: the demoted analytics behind one disclosure ── */
+.deeper { margin: 0 0 32px; }
+.deeper-head {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px;
+  font: 700 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
+  padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.deeper-head::-webkit-details-marker { display: none; }
+.deeper-plus { color: var(--muted); transition: transform .15s; display: inline-block; }
+.deeper[open] > .deeper-head .deeper-plus { transform: rotate(45deg); }
+.deeper-sub {
+  font: 400 11px/1 var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted);
+}
+.deeper-body { padding-top: 22px; }
+.architecture { margin-bottom: 28px; }
+.deeper-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px; align-items: start;
+}
+
+/* ── Vitals: the single, deduped source of the top-line counts ── */
+.vitals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  margin: 0 0 32px;
+}
+/* Cells sit on the surface; the 1px grid gap reveals the container's line colour
+   as a hairline between every cell — clean dividers at any column count. */
 .vital {
-  min-width: 0; padding: 6px 22px; background: var(--paper);
-  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0; padding: 14px 18px; background: var(--surface);
+  display: flex; flex-direction: column; gap: 5px;
 }
 .vital-num {
   font: 600 26px/1 var(--mono); letter-spacing: -.01em; color: var(--ink);
@@ -174,23 +273,10 @@ body {
 .risk-table tr:last-child td { border-bottom: 0; }
 .risk-table td p, .risks .nudge p { margin: 0; }
 .nudge { color: var(--warn); font-size: 13.5px; background: var(--warn-soft); border-radius: 8px; padding: 12px 14px; }
-.reach { margin-top: 18px; }
-.reach .mermaid { margin-top: 8px; }
-.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
-@media (max-width: 820px) { .blast-grid { grid-template-columns: 1fr; } }
-
-/* ── Visual summary ── */
-.viz-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px; align-items: start;
-}
+/* ── Visual-summary charts (change map · coverage rings · complexity) ── */
 .viz.viz-span { grid-column: auto; }
 .viz svg { width: 100%; height: auto; display: block; }
-.viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
-.viz-ripple { max-width: 720px; margin: 0 auto; }
-/* Thumbnail clamp for the overview grid; lifted inside the lightbox. */
-.zoomable svg { max-height: 168px; }
-.zoomable .mermaid { max-height: 200px; overflow: hidden; }
+.viz-complexity, .viz-scatter { max-width: 720px; }
 .zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
 .zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .zoomable::after {
@@ -204,7 +290,6 @@ body {
 .viz-label { font-family: var(--mono); font-size: 11px; fill: var(--ink-soft); }
 .viz-num { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
 .viz-axis { stroke: var(--line-2); stroke-width: 1; }
-.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
 .viz-rings { display: flex; gap: 8px; justify-content: space-around; }
 .viz-ring-svg { max-width: 150px; }
 .viz-ring-pct { fill: var(--ink); font-size: 22px; font-weight: 700; font-family: var(--sans); }
@@ -218,15 +303,13 @@ body {
 .viz-lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
 .viz-lg-muted { color: var(--muted); }
 .viz-lg-dot { flex: none; }
-.zoomable .viz-lg-dot { max-height: none; }
 .viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: var(--viz-zone); border: 1px solid var(--del-border); }
-.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
-.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
-.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
-@media (max-width: 820px) { .viz-grid { grid-template-columns: 1fr; } }
 
 /* ── Tests (claimed) ── */
 .tests .test-count { font-size: 12px; font-weight: 400; font-family: var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted); }
+.tests h3 { margin-bottom: 16px; }
+/* Tests is its own full-width section under Deeper analysis, below the grid. */
+.deeper-body > .tests { margin-top: 16px; }
 .test-group { margin-bottom: 22px; max-width: 80ch; }
 .test-group:last-child { margin-bottom: 0; }
 .test-kind {
@@ -253,7 +336,7 @@ body {
 
 /* ── Diagrams ── */
 .diagram-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 18px; align-items: start;
 }
 .diagram { margin: 0; }
@@ -264,8 +347,9 @@ body {
   padding: 16px; overflow: auto;
 }
 
-/* ── File diffs ── */
-main { display: flex; flex-direction: column; gap: 26px; }
+/* ── File diffs — the primary content, now the visual centre ── */
+.diffs { padding-bottom: 80px; }
+main { display: flex; flex-direction: column; gap: 24px; }
 .file {
   border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--surface);
@@ -343,7 +427,6 @@ code {
 .empty { color: var(--muted); }
 a { color: var(--accent); text-underline-offset: 2px; }
 @media (max-width: 820px) {
-  .page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans { padding: 28px 22px; }
   .hunk-row { grid-template-columns: 1fr; }
   .hunk-notes { border-left: 0; border-top: 1px dashed var(--line-2); }
 }
@@ -379,9 +462,9 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 16px;
-  /* Align the bar's content with the page measure on wide screens; floor to a
-     small inset on narrow ones. */
-  padding: 9px max(18px, calc((100% - var(--maxw)) / 2 + 40px));
+  /* Align the bar's content with the shell's left gutter (rail inset) on wide
+     screens; floor to a small inset on narrow ones. */
+  padding: 9px max(18px, calc((100% - var(--shellw)) / 2 + 20px));
   background: var(--glass);
   backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
   font: 12px/1 var(--mono);
@@ -416,60 +499,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .theme-opt:hover { background: var(--surface-2); color: var(--ink); }
 .theme-opt[aria-checked="true"] { color: var(--accent); font-weight: 600; }
 
-/* ── Review-first callout ── */
-.review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
-.review-first > h2 {
-  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-}
-.rf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.rf-card {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 9px;
-  background: var(--surface); text-decoration: none; color: var(--ink);
-  transition: border-color .15s, box-shadow .15s;
-}
-.rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
-.rf-rank { font: 700 13px/1 var(--mono); color: var(--accent); }
-.rf-path { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
-.rf-reasons { display: flex; flex-wrap: wrap; gap: 4px 8px; width: 100%; }
-.rf-reasons span {
-  font: 600 10px/1.5 var(--mono); color: var(--ink-soft);
-  background: var(--surface-2); border-radius: 4px; padding: 2px 6px;
-}
-
-/* ── File index (spine) ── */
-.file-index { max-width: var(--maxw); margin: 0 auto; padding: 28px 40px; border-top: 1px solid var(--line); }
-.file-index > h2 {
-  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-}
-.fi-count { font-weight: 400; text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
-.fi-list { list-style: none; margin: 0; padding: 0; }
-.fi-row { border-bottom: 1px solid var(--line); }
-.fi-row:last-child { border-bottom: 0; }
-.fi-link {
-  display: flex; align-items: center; gap: 12px; padding: 8px 6px;
-  text-decoration: none; color: var(--ink); border-radius: 6px;
-}
-.fi-link:hover { background: var(--surface-2); }
-.fi-link.active { background: var(--accent-soft); }
-.fi-rank { font: 700 12px/1 var(--mono); color: var(--accent); width: 2.4em; flex: none; }
-.fi-path { font-size: 12.5px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; background: none; padding: 0; }
-.fi-sig { display: flex; gap: 4px 10px; flex: none; font: 11px/1.4 var(--mono); color: var(--muted); }
-.fi-sig .fi-hot { color: var(--del); font-weight: 700; }
-.fi-sig .fi-gap { color: var(--warn); font-weight: 700; }
-
-/* ── Collapsible analytics bands ── */
-.band { border: 0; }
-.band-head { cursor: pointer; list-style: none; }
-.band-head::-webkit-details-marker { display: none; }
-.band-head h2::before {
-  content: "›"; font-size: 15px; color: var(--muted); transition: transform .15s; display: inline-block;
-}
-.band[open] > .band-head h2::before { transform: rotate(90deg); }
-.band-body { padding-top: 22px; }
-
 /* ── File head badges + collapsible files + viewed state ── */
 .file > summary.file-head { cursor: pointer; list-style: none; }
 .file > summary.file-head::-webkit-details-marker { display: none; }
@@ -484,7 +513,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
 .fbadge-uncommitted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
 .diff-scope-banner {
-  max-width: var(--maxw); margin: 0 auto 18px; padding: 10px 14px;
+  max-width: var(--shellw); margin: 0 auto 6px; padding: 10px 14px;
   border-radius: 8px; background: var(--warn-soft); color: var(--warn);
   border: 1px solid var(--warn); font-size: 14px;
 }
@@ -495,11 +524,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 .file.viewed { opacity: .55; }
 .file.viewed:hover { opacity: 1; }
-
-@media (max-width: 820px) {
-  .review-first, .file-index { padding: 22px; }
-  .fi-sig { width: 100%; }
-}
 
 /* ── Phones ── */
 @media (max-width: 560px) {
@@ -513,68 +537,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   .lightbox-close { top: 8px; right: 10px; }
 }
 
-/* ── Pin-to-rail: movable blocks + a sticky sidebar on wide screens ── */
-/* Center the wrapper to the same column width as the section it wraps, so the
-   absolutely-positioned pin button lands on the block's corner rather than out
-   in the full-width right margin. has-pins mode overrides this to fill its column. */
-.movable { position: relative; max-width: var(--maxw); margin: 0 auto; }
-.rail:empty { display: none; }
-/* The pin affordance only exists where there's a rail to pin to (wide screens). */
-.pin-btn { display: none; }
-
-@media (min-width: 1500px) {
-  .pin-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    position: absolute; top: 12px; right: 14px; z-index: 3;
-    color: var(--muted); cursor: pointer;
-    background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px;
-    padding: 5px; opacity: 0; transition: opacity .15s, border-color .15s, color .15s, background .15s;
-  }
-  .pin-ico { display: block; }
-  .movable:hover > .pin-btn, .pin-btn:focus-visible { opacity: 1; }
-  .pin-btn:hover { color: var(--accent); border-color: var(--accent); }
-  .pin-btn[aria-pressed="true"] { opacity: 1; color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-
-  /* The two-pane shell engages only once something is pinned; with an empty
-     rail the page stays the calm centred column it is below this width. */
-  body.has-pins .page-head { max-width: var(--shellw); }
-  body.has-pins .topbar { padding-inline: max(18px, calc((100% - var(--shellw)) / 2 + 40px)); }
-  /* Align the alert bar with the shell's left gutter instead of the old centred
-     column, so it lines up with the masthead and the rail below it. */
-  body.has-pins .diff-scope-banner {
-    max-width: none;
-    margin-inline: max(40px, calc((100% - var(--shellw)) / 2 + 40px));
-  }
-  body.has-pins .layout {
-    max-width: var(--shellw); margin: 0 auto; padding: 0 40px;
-    display: grid; grid-template-columns: 460px minmax(0, 1fr);
-    gap: 36px; align-items: start;
-  }
-  body.has-pins .rail {
-    position: sticky; top: 56px; align-self: start;
-    max-height: calc(100vh - 72px); overflow: auto;
-    display: flex; flex-direction: column; gap: 18px;
-  }
-  body.has-pins .content { min-width: 0; }
-  /* In the shell, movables fill their column/rail instead of self-centering. */
-  body.has-pins .content > .movable,
-  body.has-pins .rail > .movable { max-width: none; margin: 0; }
-  /* Inside the shell, blocks fill their column instead of self-centring. */
-  body.has-pins .content > .movable > section,
-  body.has-pins .content > .movable > nav,
-  body.has-pins .content > main,
-  body.has-pins .content > .orphans,
-  body.has-pins .rail > .movable > section,
-  body.has-pins .rail > .movable > nav { max-width: none; margin: 0; }
-  /* Rail blocks: trim the band padding, drop the band rule, fit narrow charts
-     and let a wide table scroll rather than crush. */
-  body.has-pins .rail > .movable > section,
-  body.has-pins .rail > .movable > nav { padding: 18px 16px; border-top: 0; }
-  body.has-pins .rail .band-body { padding-top: 16px; }
-  body.has-pins .rail .blast-grid { grid-template-columns: 1fr; }
-  body.has-pins .rail .risks { overflow-x: auto; }
-  body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
-}
 
 /* ── Review annotations (comments + questions) ── */
 .cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
@@ -1391,6 +1353,110 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     </div>
   </div>
 </div>
+
+
+<div class="shell">
+<aside class="rail" aria-label="Changed files">
+<div class="spine-head">
+    <span class="spine-title">Files</span>
+    <span class="spine-count">7 changed</span>
+  </div>
+  <p class="spine-sub">Ranked by reach × churn — top of the list reads first.</p>
+  <nav class="spine" aria-label="Changed files">
+  <a class="spine-row" href="#file-0">
+    <span class="spine-rank">1</span>
+    <span class="spine-path">src/render.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="34.0" y="2" width="8.0" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="40.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+200 −40</span>
+      <span class="spine-chip spine-chip-ccn" title="complexity hotspot — CCN 18">CCN</span>
+    </span>
+  </a>
+  <a class="spine-row" href="#file-1">
+    <span class="spine-rank">2</span>
+    <span class="spine-path">src/scorecard.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="40.8" y="2" width="1.2" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="8.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+40 −6</span>
+      <span class="spine-chip spine-chip-ccn" title="complexity hotspot — CCN 21">CCN</span>
+    </span>
+  </a>
+  <a class="spine-row" href="#file-4">
+    <span class="spine-rank">3</span>
+    <span class="spine-path">test/render.test.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="42.0" y="2" width="0.0" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="8.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+40 −0</span>
+      
+    </span>
+  </a>
+  <a class="spine-row" href="#file-2">
+    <span class="spine-rank">4</span>
+    <span class="spine-path">src/types.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="41.2" y="2" width="0.8" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="6.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+30 −4</span>
+      
+    </span>
+  </a>
+  <a class="spine-row" href="#file-3">
+    <span class="spine-rank">5</span>
+    <span class="spine-path">src/match.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="41.6" y="2" width="0.4" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="3.6" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+18 −2</span>
+      
+    </span>
+  </a>
+  <a class="spine-row" href="#file-5">
+    <span class="spine-rank">6</span>
+    <span class="spine-path">package-lock.json</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="33.2" y="2" width="8.8" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="0.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+0 −44</span>
+      <span class="spine-chip spine-chip-gap" title="some of this file has no written intent">GAP</span>
+    </span>
+  </a>
+  <a class="spine-row" href="#file-6">
+    <span class="spine-rank">7</span>
+    <span class="spine-path">src/legacy.ts</span>
+    <span class="spine-sig">
+      <svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="42.0" y="2" width="0.0" height="6" fill="var(--viz-del)" fill-opacity=".85" />
+        <rect x="42" y="2" width="0.0" height="6" fill="var(--viz-add)" fill-opacity=".85" />
+      </svg>
+      <span class="spine-counts">+0 −0</span>
+      
+    </span>
+  </a>
+  </nav>
+</aside>
+<div class="main-col">
 <header class="page-head" id="top">
   <div class="eyebrow">Intent review <span class="eyebrow-diff">main…HEAD</span></div>
   <h1>Add intent-coverage gate and blast-radius visuals</h1>
@@ -1400,12 +1466,11 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <div class="overall"><p>This change set extends the <strong>scorecard</strong> and adds a visual summary. Rejected a charting dependency in favour of pure inline SVG so <code>render.ts</code> stays deterministic.</p></div>
   </details>
 </header>
-
-
-<div class="layout">
-<aside class="rail" id="rail" aria-label="Pinned blocks"></aside>
-<div class="content">
-<div class="movable" data-movable="vitals"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="vitals" aria-label="Change vitals">
+<div class="verdict verdict-warn" role="note">
+  <span class="verdict-icon" aria-hidden="true">⚑</span>
+  <div class="verdict-msg">2 complexity hotspots (scorecard.ts, render.ts) carry the most risk — start there.</div>
+</div>
+<section class="vitals" aria-label="Change vitals">
   <div class="vital">
     <span class="vital-num">7</span>
     <span class="vital-lbl">files</span>
@@ -1434,273 +1499,10 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="vital-num">5</span>
     <span class="vital-lbl">dependents</span>
   </div>
-</section></div>
-
-<div class="movable" data-movable="review-first"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="review-first">
-  <h2>Review first</h2>
-  <div class="rf-cards"><a class="rf-card" href="#file-0">
-      <span class="rf-rank">#1</span>
-      <code class="rf-path">src/render.ts</code>
-      <span class="rf-reasons"><span>240 lines</span><span>imported by 2</span><span>CCN 18</span></span>
-    </a><a class="rf-card" href="#file-1">
-      <span class="rf-rank">#2</span>
-      <code class="rf-path">src/scorecard.ts</code>
-      <span class="rf-reasons"><span>46 lines</span><span>imported by 3</span><span>CCN 21</span></span>
-    </a><a class="rf-card" href="#file-4">
-      <span class="rf-rank">#3</span>
-      <code class="rf-path">test/render.test.ts</code>
-      <span class="rf-reasons"><span>40 lines</span></span>
-    </a></div>
-</section></div>
-
-<div class="movable" data-movable="file-index"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><nav class="file-index" aria-label="Changed files">
-  <h2>Files <span class="muted fi-count">7 changed · review-ordered</span></h2>
-  <ol class="fi-list">
-  <li class="fi-row">
-    <a class="fi-link" href="#file-0">
-      <span class="fi-rank">#1</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">src/render.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+200 −40</span>
-        <span class="fi-reach" title="dependents (reach)">→ 2</span>
-        <span class="fi-hot" title="complexity hotspot">CCN 18</span>
-        
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-1">
-      <span class="fi-rank">#2</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">src/scorecard.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+40 −6</span>
-        <span class="fi-reach" title="dependents (reach)">→ 3</span>
-        <span class="fi-hot" title="complexity hotspot">CCN 21</span>
-        
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-4">
-      <span class="fi-rank">#3</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">test/render.test.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+40 −0</span>
-        
-        
-        
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-2">
-      <span class="fi-rank">#4</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">src/types.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+30 −4</span>
-        
-        
-        
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-3">
-      <span class="fi-rank">#5</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">src/match.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+18 −2</span>
-        
-        
-        
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-5">
-      <span class="fi-rank">#6</span>
-      <span class="status status-modified">modified</span>
-      <code class="fi-path">package-lock.json</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+0 −44</span>
-        
-        
-        <span class="fi-gap" title="unexplained change">⚠</span>
-      </span>
-    </a>
-  </li>
-  <li class="fi-row">
-    <a class="fi-link" href="#file-6">
-      <span class="fi-rank">#7</span>
-      <span class="status status-deleted">deleted</span>
-      <code class="fi-path">src/legacy.ts</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+0 −0</span>
-        
-        
-        
-      </span>
-    </a>
-  </li>
-  </ol>
-</nav></div>
-
-<div class="movable" data-movable="blast"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="blast">
-  <details class="band" open>
-    <summary class="band-head"><h2>Blast radius</h2></summary>
-    <div class="band-body">
-      <div class="blast-grid">
-        <div class="card scorecard">
-  <h3>Surface area <span class="src">measured</span></h3>
-  <div class="metrics">
-    <span><b>7</b> files <span class="muted">(4 modified, 2 added, 1 deleted)</span></span>
-    <span><b>14</b> hunks</span>
-    <span class="add">+320</span>
-    <span class="del">−96</span>
-    <span><b>1</b> test / <b>5</b> code files</span>
-  </div>
-  <div class="metrics metrics-extra"><span>net +224 lines</span><span>40 test / 360 code lines</span><span>2.0 hunks/file</span><span>2 new files</span><span>5 dependents <span class="muted">(reach)</span></span><span>intent: 5/7 files · 10/14 hunks</span><span>diagrams: class</span><span class="flag">3 debt/debug markers added</span><span class="flag">1 noise file</span><span>largest: <code>src/render.ts</code> ±240</span><span class="flag">max CCN 21 · 2 hotspots ≥ 15</span></div>
-  <div class="badges"><span class="badge tone-warn">large change set</span><span class="badge tone-danger">touches dependencies</span></div>
-</div>
-        <div class="card risks">
-  <h3>Risk ledger <span class="src">claimed</span></h3>
-  <table class="risk-table">
-    <thead><tr><th>Assumption</th><th>If false</th><th>How you'd know</th></tr></thead>
-    <tbody><tr>
-    <td><p>Diff line counts approximate churn well</p></td>
-    <td><p>Treemap areas mislead</p></td>
-    <td><p>Compare with git --stat</p></td>
-  </tr></tbody>
-  </table>
-</div>
-      </div>
-      <div class="card reach zoomable">
-  <h3>Reach <span class="src">measured · heuristic</span></h3>
-  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
-  <svg class="viz-ripple" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet" role="img">
-  <circle cx="360" cy="210" r="155" class="ripple-ring" /><circle cx="360" cy="210" r="80" class="ripple-ring" /><line x1="360.0" y1="60.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="360.0" y1="60.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="550.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="360.0" y1="360.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="170.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><g class="ripple-node">
-  <title>src/cli.ts — imports a changed file</title>
-  <circle cx="360.0" cy="60.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
-  <text x="360.0" y="76.0" text-anchor="middle" class="ripple-label">src/cli.ts</text>
-</g><g class="ripple-node">
-  <title>src/match.ts — imports a changed file</title>
-  <circle cx="550.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
-  <text x="550.0" y="226.0" text-anchor="middle" class="ripple-label">src/match.ts</text>
-</g><g class="ripple-node">
-  <title>test/render.test.ts — imports a changed file</title>
-  <circle cx="360.0" cy="360.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
-  <text x="360.0" y="376.0" text-anchor="middle" class="ripple-label">test/render.test.ts</text>
-</g><g class="ripple-node">
-  <title>test/scorecard.test.ts — imports a changed file</title>
-  <circle cx="170.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
-  <text x="170.0" y="226.0" text-anchor="middle" class="ripple-label">test/scorecard.test.ts</text>
-</g><g class="ripple-node">
-  <title>src/render.ts — changed file</title>
-  <circle cx="360.0" cy="146.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
-  <text x="360.0" y="133.0" text-anchor="middle" class="ripple-label">src/render.ts</text>
-</g><g class="ripple-node">
-  <title>src/scorecard.ts — changed file</title>
-  <circle cx="360.0" cy="274.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
-  <text x="360.0" y="261.0" text-anchor="middle" class="ripple-label">src/scorecard.ts</text>
-</g>
-</svg>
-  
-</div>
-    </div>
-  </details>
-</section></div>
-
-<div class="movable" data-movable="visuals"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="visuals">
-  <details class="band">
-    <summary class="band-head"><h2>Visual summary <span class="src">measured</span></h2></summary>
-    <div class="band-body">
-      <div class="viz-grid">
-        <div class="card viz viz-span zoomable">
-  <h3>Diff mass <span class="src">± lines per file</span></h3>
-  <svg class="viz-diffmass" viewBox="0 0 720 152" preserveAspectRatio="xMidYMid meet" role="img">
-    <line x1="417" y1="10" x2="417" y2="142" class="viz-axis" />
-    <g><title>src/render.ts — +200 −40 (code)</title><circle cx="9" cy="21" r="3" fill="var(--viz-add)" />
-    <text x="18" y="24" class="viz-label" fill="var(--viz-accent)">src/render.ts</text>
-    <rect x="374.4" y="14" width="42.6" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="14" width="213.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="24" class="viz-num">+200 −40</text></g>
-    <g><title>src/scorecard.ts — +40 −6 (code)</title><circle cx="9" cy="43" r="3" fill="var(--viz-add)" />
-    <text x="18" y="46" class="viz-label" fill="var(--viz-accent)">src/scorecard.ts</text>
-    <rect x="410.6" y="36" width="6.4" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="36" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="46" class="viz-num">+40 −6</text></g>
-    <g><title>package-lock.json — +0 −44 (noise) · no intent written</title><circle cx="9" cy="65" r="3" fill="none" stroke="var(--viz-del)" stroke-width="1.5" />
-    <text x="18" y="68" class="viz-label" fill="var(--viz-noise)">package-lock.json</text>
-    <rect x="370.1" y="58" width="46.9" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="58" width="0.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="68" class="viz-num">+0 −44</text></g>
-    <g><title>test/render.test.ts — +40 −0 (test)</title><circle cx="9" cy="87" r="3" fill="var(--viz-add)" />
-    <text x="18" y="90" class="viz-label" fill="var(--viz-add-ink)">test/render.test.ts</text>
-    <rect x="417.0" y="80" width="0.0" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="80" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="90" class="viz-num">+40 −0</text></g>
-    <g><title>src/types.ts — +30 −4 (code)</title><circle cx="9" cy="109" r="3" fill="var(--viz-add)" />
-    <text x="18" y="112" class="viz-label" fill="var(--viz-accent)">src/types.ts</text>
-    <rect x="412.7" y="102" width="4.3" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="102" width="31.9" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="112" class="viz-num">+30 −4</text></g>
-    <g><title>src/match.ts — +18 −2 (code)</title><circle cx="9" cy="131" r="3" fill="var(--viz-add)" />
-    <text x="18" y="134" class="viz-label" fill="var(--viz-accent)">src/match.ts</text>
-    <rect x="414.9" y="124" width="2.1" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
-    <rect x="417.0" y="124" width="19.2" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
-    <text x="640" y="134" class="viz-num">+18 −2</text></g>
-  </svg>
-  <p class="viz-cap">One row per changed file, longest diff first: bar length = lines added (green, right) vs removed (red, left). The dot is filled ● when intent was written for the file, hollow ○ when it wasn't. Hover a row for its path and counts.</p>
-</div>
-    <div class="card viz viz-span zoomable">
-  <h3>Change treemap <span class="src">area = churn</span></h3>
-  <svg class="viz-treemap" viewBox="0 0 720 300" preserveAspectRatio="none" role="img">
-    <g><title>src/render.ts — 240 lines changed</title><rect x="0.0" y="0.0" width="407.5" height="300.0" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="5.0" y="15.0" class="viz-cell-label">render.ts</text></g>
-    <g><title>src/scorecard.ts — 46 lines changed</title><rect x="407.5" y="0.0" width="152.8" height="153.3" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="412.5" y="15.0" class="viz-cell-label">scorecard.ts</text></g>
-    <g><title>package-lock.json — 44 lines changed · no intent written</title><rect x="407.5" y="153.3" width="152.8" height="146.7" fill="var(--viz-s8)" fill-opacity="0.82" stroke="var(--viz-del-ink)" stroke-width="2" /><text x="412.5" y="168.3" class="viz-cell-label">package-lock.json</text></g>
-    <g><title>test/render.test.ts — 40 lines changed</title><rect x="560.4" y="0.0" width="159.6" height="127.7" fill="var(--viz-s3)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="15.0" class="viz-cell-label">render.test.ts</text></g>
-    <g><title>src/types.ts — 34 lines changed</title><rect x="560.4" y="127.7" width="159.6" height="108.5" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="142.7" class="viz-cell-label">types.ts</text></g>
-    <g><title>src/match.ts — 20 lines changed</title><rect x="560.4" y="236.2" width="159.6" height="63.8" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="251.2" class="viz-cell-label">match.ts</text></g>
-  </svg>
-  <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
-</div>
-    <div class="card viz viz-span zoomable">
-  <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>
-  <svg class="viz-complexity" viewBox="0 0 720 68" preserveAspectRatio="xMidYMid meet" role="img">
-    <g><title>buildScorecard — CCN 21 (threshold 15) at src/scorecard.ts:31</title><text x="6" y="25" class="viz-label">buildScorecard · scorecard.ts:31</text>
-    <rect x="300" y="14" width="360.0" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
-    <text x="666.0" y="25" class="viz-num">21</text></g>
-    <g><title>renderScorecard — CCN 18 (threshold 15) at src/render.ts:60</title><text x="6" y="49" class="viz-label">renderScorecard · render.ts:60</text>
-    <rect x="300" y="38" width="308.6" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
-    <text x="614.6" y="49" class="viz-num">18</text></g>
-  </svg>
-  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of 15; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
-</div>
-    <div class="card viz zoomable">
-  <h3>Intent coverage <span class="src">measured</span></h3>
-  <div class="viz-rings">
-    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
-  <title>5 of 7 files carry intent (71%)</title>
-  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
-  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
-  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
-  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">files 5/7</text>
-</svg>
-    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
-  <title>10 of 14 hunks carry intent (71%)</title>
-  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
-  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
-  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
-  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">hunks 10/14</text>
-</svg>
-  </div>
-  <p class="viz-cap">Share of changed files (each needs a what + why) and diff hunks (each needs an anchored note) that carry agent-written intent. The completeness gate normally forces both to 100% — anything lower means the page was rendered with <code>--allow-gaps</code> and some of the change is unexplained.</p>
-</div>
+</section>
+<section class="change-summary">
+  <div class="section-eyebrow">Change summary</div>
+  <div class="cs-grid">
     <div class="card viz viz-span zoomable">
   <h3>Change map <span class="src">per file · measured</span></h3>
   <svg class="viz-scatter" viewBox="0 0 720 380" preserveAspectRatio="xMidYMid meet" role="img">
@@ -1733,16 +1535,85 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   </div>
   <p class="viz-cap">Each dot is one changed file, placed by how far it reaches — repo files that import it (x) — against how much it changed in lines (y). The further toward the top-right, the more it warrants a close read. Hover a dot for its exact numbers.</p>
 </div>
-      </div>
-    </div>
-  </details>
-</section></div>
-
-<div class="movable" data-movable="tests"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="tests">
-  <details class="band">
-    <summary class="band-head"><h2>Tests <span class="src">claimed</span> <span class="muted test-count">5 cases described</span></h2></summary>
-    <div class="band-body">
-      <div class="test-group" style="--k:var(--viz-add-ink)">
+    <div class="card risks">
+  <h3>Risk ledger <span class="src">claimed</span></h3>
+  <table class="risk-table">
+    <thead><tr><th>Assumption</th><th>If false</th><th>How you'd know</th></tr></thead>
+    <tbody><tr>
+    <td><p>Diff line counts approximate churn well</p></td>
+    <td><p>Treemap areas mislead</p></td>
+    <td><p>Compare with git --stat</p></td>
+  </tr></tbody>
+  </table>
+</div>
+  </div>
+</section>
+<details class="deeper" open>
+  <summary class="deeper-head"><span class="deeper-plus" aria-hidden="true">＋</span> Deeper analysis <span class="deeper-sub">— architecture · coverage · complexity · tests</span></summary>
+  <div class="deeper-body">
+    <div class="architecture">
+  <div class="section-subhead">Architecture <span class="src">authored</span></div>
+  <div class="diagram-grid">
+<section class="diagram zoomable">
+  <h2>Class diagram</h2>
+  <pre class="mermaid">classDiagram
+  Scorecard &lt;|-- Visuals</pre>
+</section>
+<section class="diagram zoomable">
+  <h2>Sequence diagram (changed steps highlighted)</h2>
+  <pre class="mermaid">sequenceDiagram
+  participant CLI
+  participant Scorecard
+  participant Render
+  CLI-&gt;&gt;Scorecard: buildScorecard(diff)
+  Scorecard--&gt;&gt;CLI: metrics
+  CLI-&gt;&gt;Render: renderHtml(model)
+  Render--&gt;&gt;CLI: review.html</pre>
+</section>
+  </div>
+</div>
+    <div class="deeper-grid">
+    <div class="card viz zoomable">
+  <h3>Intent coverage <span class="src">measured</span></h3>
+  <div class="viz-rings">
+    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
+  <title>5 of 7 files carry intent (71%)</title>
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
+  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
+  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">files 5/7</text>
+</svg>
+    <svg viewBox="0 0 120 150" class="viz-ring-svg" role="img">
+  <title>10 of 14 hunks carry intent (71%)</title>
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-line)" stroke-width="12" />
+  <circle cx="60" cy="60" r="42" fill="none" stroke="var(--viz-warn)" stroke-width="12" stroke-linecap="round" stroke-dasharray="188.5 263.9" transform="rotate(-90 60 60)" />
+  <text x="60" y="67" text-anchor="middle" class="viz-ring-pct">71%</text>
+  <text x="60" y="135" text-anchor="middle" class="viz-ring-label">hunks 10/14</text>
+</svg>
+  </div>
+  <p class="viz-cap">Share of changed files (each needs a what + why) and diff hunks (each needs an anchored note) that carry agent-written intent. The completeness gate normally forces both to 100% — anything lower means the page was rendered with <code>--allow-gaps</code> and some of the change is unexplained.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>
+  <svg class="viz-complexity" viewBox="0 0 720 68" preserveAspectRatio="xMidYMid meet" role="img">
+    <g><title>buildScorecard — CCN 21 (threshold 15) at src/scorecard.ts:31</title><text x="6" y="25" class="viz-label">buildScorecard · scorecard.ts:31</text>
+    <rect x="300" y="14" width="360.0" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="666.0" y="25" class="viz-num">21</text></g>
+    <g><title>renderScorecard — CCN 18 (threshold 15) at src/render.ts:60</title><text x="6" y="49" class="viz-label">renderScorecard · render.ts:60</text>
+    <rect x="300" y="38" width="308.6" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="614.6" y="49" class="viz-num">18</text></g>
+  </svg>
+  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of 15; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
+</div>
+    <div class="card scorecard">
+  <h3>Signals <span class="src">measured</span></h3>
+  <div class="metrics metrics-extra"><span>40 test / 360 code lines</span><span class="flag">3 debt/debug markers added</span><span class="flag">1 noise file</span><span>largest: <code>src/render.ts</code> ±240</span></div>
+  <div class="badges"><span class="badge tone-warn">large change set</span><span class="badge tone-danger">touches dependencies</span></div>
+</div>
+  </div>
+    <div class="card tests">
+  <h3>Tests <span class="src">claimed</span> <span class="muted test-count">5 cases described</span></h3>
+  <div class="test-group" style="--k:var(--viz-add-ink)">
       <h4 class="test-kind">unit</h4>
       <ul class="test-list">
       <li class="test-case"><p>An empty diff renders a valid page but omits the churn-driven charts.</p> <code class="test-name">omits churn charts on empty diff</code></li>
@@ -1762,27 +1633,13 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
       <li class="test-case"><p>Eyeball sample-output.html in a browser to confirm the visuals read well.</p></li>
       </ul>
     </div>
-    </div>
-  </details>
-</section></div>
+</div>
+  </div>
+</details>
 
-<div class="movable" data-movable="diagrams"><button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar"><svg class="pin-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" /></svg></button><section class="diagrams">
-  <details class="band">
-    <summary class="band-head"><h2>Diagrams</h2></summary>
-    <div class="band-body">
-      <div class="diagram-grid">
-<section class="diagram zoomable">
-  <h2>Class diagram</h2>
-  <pre class="mermaid">classDiagram
-  Scorecard &lt;|-- Visuals</pre>
-</section>
-
-      </div>
-    </div>
-  </details>
-</section></div>
-
-<main>
+<section class="diffs">
+  <div class="section-eyebrow">Diffs <span class="section-eyebrow-sub">— in review order</span></div>
+  <main>
   <details class="file" id="file-0" open>
   <summary class="file-head">
     <span class="status status-modified">modified</span>
@@ -4204,7 +4061,8 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   
   </div>
 </details>
-</main>
+  </main>
+</section>
 
 
 <section class="review-feedback" id="feedback">
@@ -4279,6 +4137,13 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
     var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
     var prog = document.querySelector(".tb-progress");
+    // The file rail (spine) links by anchor — reused for both the active-file
+    // highlight and to dim a row once its file is marked reviewed.
+    var links = {};
+    document.querySelectorAll(".rail a[href^='#']").forEach(function (a) {
+      links[a.getAttribute("href").slice(1)] = a;
+    });
+    function dim(id, on) { var a = links[id]; if (a) a.classList.toggle("viewed", on); }
     function update() {
       if (!prog) return;
       var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
@@ -4288,22 +4153,18 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
       var cb = f.querySelector(".viewed-cb");
       var toggle = f.querySelector(".viewed-toggle");
       if (!cb) return;
-      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; }
+      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; dim(f.id, true); }
       // Don't let the control toggle the <details> it lives in.
       if (toggle) toggle.addEventListener("click", function (e) { e.stopPropagation(); });
       cb.addEventListener("change", function () {
-        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; }
-        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; }
+        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; dim(f.id, true); }
+        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; dim(f.id, false); }
         try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
         update();
       });
     });
     update();
 
-    var links = {};
-    document.querySelectorAll(".file-index a[href^='#']").forEach(function (a) {
-      links[a.getAttribute("href").slice(1)] = a;
-    });
     if (window.IntersectionObserver) {
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
@@ -4313,65 +4174,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
       }, { rootMargin: "-45% 0px -45% 0px" });
       files.forEach(function (f) { io.observe(f); });
     }
-  })();
-</script>
-<script>
-  (function () {
-    var rail = document.getElementById("rail");
-    if (!rail) return;
-    var KEY = "review-intent:pinned:v2:Add intent-coverage gate and blast-radius visuals@main";
-    // Declaration order — the rail stacks pinned blocks in this order regardless
-    // of the order the reader pinned them, so the rail stays predictable.
-    var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
-    var wide = window.matchMedia("(min-width: 1500px)");
-    var nodes = {}, anchors = {};
-    document.querySelectorAll(".movable").forEach(function (el) {
-      var k = el.getAttribute("data-movable");
-      nodes[k] = el;
-      var a = document.createComment("m:" + k);
-      el.parentNode.insertBefore(a, el);
-      anchors[k] = a;
-    });
-    var pinned;
-    try { pinned = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
-    // Default on wide screens: dock the whole overview into the rail so the diffs
-    // get the main column without the reader having to pin anything. Empty blocks
-    // (e.g. no tests/diagrams) are filtered out below. Unpin to customize.
-    if (!Array.isArray(pinned)) pinned = ["vitals", "review-first", "file-index", "blast", "visuals"];
-    pinned = pinned.filter(function (k) { return nodes[k]; });
-    function apply() {
-      var isWide = wide.matches;
-      ORDER.forEach(function (k) {
-        var el = nodes[k];
-        if (!el) return;
-        var on = pinned.indexOf(k) !== -1;
-        var btn = el.querySelector(".pin-btn");
-        if (btn) {
-          btn.setAttribute("aria-pressed", on ? "true" : "false");
-          btn.title = on ? "Unpin from sidebar" : "Pin to sidebar";
-          btn.setAttribute("aria-label", btn.title);
-        }
-        if (isWide && on) rail.appendChild(el);
-        else anchors[k].parentNode.insertBefore(el, anchors[k]);
-      });
-      document.body.classList.toggle("has-pins", isWide && pinned.length > 0);
-    }
-    document.querySelectorAll(".pin-btn").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var el = btn.closest(".movable");
-        if (!el) return;
-        var k = el.getAttribute("data-movable");
-        var i = pinned.indexOf(k);
-        if (i === -1) pinned.push(k); else pinned.splice(i, 1);
-        try { localStorage.setItem(KEY, JSON.stringify(pinned)); } catch (e) {}
-        apply();
-      });
-    });
-    if (wide.addEventListener) wide.addEventListener("change", apply);
-    else if (wide.addListener) wide.addListener(apply);
-    apply();
   })();
 </script>
 <script>

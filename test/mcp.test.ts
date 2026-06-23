@@ -8,6 +8,7 @@ vi.mock("open", () => ({ default: vi.fn(async () => undefined) }));
 import {
   reviewToolInputShape,
   parseSubmission,
+  parseAsk,
   formatToolResult,
   authoringGuide,
   serveAndBlock,
@@ -92,6 +93,28 @@ describe("parseSubmission", () => {
   it("throws on malformed JSON", () => {
     expect(() => parseSubmission("not json")).toThrow();
     expect(() => parseSubmission("")).toThrow();
+  });
+});
+
+describe("parseAsk", () => {
+  it("parses a valid ask object", () => {
+    expect(parseAsk('{"questionId":"q:src/a.ts:12","ref":"src/a.ts @ L12","question":"why?"}')).toEqual({
+      questionId: "q:src/a.ts:12",
+      ref: "src/a.ts @ L12",
+      question: "why?",
+    });
+  });
+
+  it("throws on a missing field", () => {
+    expect(() => parseAsk('{"questionId":"q","ref":"r"}')).toThrow();
+  });
+
+  it("throws on a non-string field", () => {
+    expect(() => parseAsk('{"questionId":"q","ref":"r","question":3}')).toThrow();
+  });
+
+  it("throws on malformed JSON", () => {
+    expect(() => parseAsk("nope")).toThrow();
   });
 });
 

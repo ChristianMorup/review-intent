@@ -56,6 +56,24 @@ export function parseSubmission(body: string): Submission {
   return SubmissionSchema.parse(parsed);
 }
 
+export interface AskQuestion {
+  questionId: string;
+  ref: string;
+  question: string;
+}
+
+const AskSchema = z.object({
+  questionId: z.string(),
+  ref: z.string(),
+  question: z.string(),
+});
+
+/** Parse + validate the POST /ask body. Throws on malformed input. */
+export function parseAsk(body: string): AskQuestion {
+  const parsed: unknown = JSON.parse(body);
+  return AskSchema.parse(parsed);
+}
+
 /**
  * The authoring contract, derived from the skill's single source of truth with
  * its YAML frontmatter stripped (the frontmatter is a skill-file artifact; an

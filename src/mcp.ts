@@ -276,7 +276,11 @@ export function openReviewSession(
     session.server = server;
 
     server.on("error", (err) => {
-      if (!sessions.has(sessionId)) reject(err);
+      if (!session.settled) {
+        session.settled = true;
+        if (session.liveness) clearInterval(session.liveness);
+        reject(err);
+      }
     });
 
     server.listen(0, "127.0.0.1", () => {

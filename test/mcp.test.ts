@@ -17,7 +17,7 @@ import {
 } from "../src/mcp.js";
 
 // Mirrors complexity.test.ts: only the PURE exports are unit-tested. The http
-// server, browser launch, and stdio transport (runMcp/serveAndBlock) are
+// server, browser launch, and stdio transport (runMcp) are
 // side-effecting and exercised by a manual smoke test, not vitest.
 
 describe("formatToolResult", () => {
@@ -233,11 +233,12 @@ describe("review session round-trip", () => {
     });
     expect(bad.status).toBe(400);
 
-    await fetch(base + "submit", {
+    const ok = await fetch(base + "submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision: "approve", prompt: "" }),
     });
+    expect(ok.status).toBe(200);
 
     cap.restore();
     expect(await event).toEqual({

@@ -7,6 +7,7 @@ vi.mock("open", () => ({ default: vi.fn(async () => undefined) }));
 
 import {
   reviewToolInputShape,
+  answerToolInputShape,
   parseSubmission,
   parseAsk,
   formatToolResult,
@@ -174,6 +175,15 @@ describe("reviewToolInputShape", () => {
   it("rejects a non-boolean allowGaps", () => {
     const schema = z.object(reviewToolInputShape);
     expect(schema.safeParse({ allowGaps: "no" }).success).toBe(false);
+  });
+});
+
+describe("answerToolInputShape", () => {
+  it("is a raw zod shape with sessionId, questionId, answer", () => {
+    expect(Object.keys(answerToolInputShape).sort()).toEqual(["answer", "questionId", "sessionId"]);
+    const schema = z.object(answerToolInputShape);
+    expect(schema.safeParse({ sessionId: "sid-1", questionId: "q:a:1", answer: "because" }).success).toBe(true);
+    expect(schema.safeParse({ sessionId: "sid-1", questionId: "q:a:1" }).success).toBe(false);
   });
 });
 

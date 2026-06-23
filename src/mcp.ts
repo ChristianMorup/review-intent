@@ -29,6 +29,12 @@ export const reviewToolInputShape = {
   allowGaps: z.boolean().optional(),
 };
 
+export const answerToolInputShape = {
+  sessionId: z.string(),
+  questionId: z.string(),
+  answer: z.string(),
+};
+
 export type Decision = "approve" | "request-changes";
 
 export interface Submission {
@@ -414,7 +420,7 @@ export async function runMcp(_argv: string[]): Promise<void> {
     {
       title: "Review changes",
       description:
-        "Render the branch diff (base...HEAD) as an intent-annotated review page, open it in the reviewer's browser, block until they approve or request changes, and return their decision plus assembled feedback.",
+        "Render the branch diff (base...HEAD) as an intent-annotated review page, open it in the reviewer's browser, block until they approve or request changes, and return their decision plus assembled feedback. If the reviewer asks a question instead of deciding, this returns a question event; answer it with answer_review_question and keep answering until a decision is returned.",
       inputSchema: reviewToolInputShape,
     },
     async (args) => {
@@ -469,6 +475,21 @@ export async function runMcp(_argv: string[]): Promise<void> {
           isError: true,
         };
       }
+    },
+  );
+
+  server.registerTool(
+    "answer_review_question",
+    {
+      title: "Answer a review question",
+      description:
+        "Answer a question the reviewer asked during an open review (from a review_changes question event). Pushes your answer to the live review page and blocks until the next event — another question, or the reviewer's final decision. Keep calling this for each question until you receive a submitted or abandoned result.",
+      inputSchema: answerToolInputShape,
+    },
+    async (args) => {
+      deliverAnswer(args.sessionId, args.questionId, args.answer);
+      const event = await waitForEvent(args.sessionId);
+      return { content: [{ type: "text", text: formatEventResult(event) }] };
     },
   );
 

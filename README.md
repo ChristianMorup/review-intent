@@ -42,26 +42,32 @@ review-intent
 
 ### Claimed vs. measured, side by side
 
-Every page opens with a blast-radius block. The **measured** side is computed
-from the diff and is un-gameable: files, hunks, ±lines, intent coverage, cyclomatic
-complexity, a red flag when code changed but tests didn't, and sensitive-path
-badges (`auth`, dependencies, secrets, pipelines, Dockerfiles…). The **claimed**
-side is the author's risk ledger — _assumption → if false → how you'd know_. When
-the two disagree, you see it immediately.
+Every page leads with the **measured** surface area — computed from the diff and
+un-gameable: a vitals strip (files, ±lines, hunks, intent coverage, max cyclomatic
+complexity, downstream dependents) above a one-line **verdict** that names the
+complexity hotspots and flags when code changed but tests didn't, so you know
+where to look before you scroll. The **claimed** side is the author's risk ledger
+— _assumption → if false → how you'd know_ — and it sits right beside the measured
+change map. When the two disagree, you see it immediately.
 
 <p align="center">
-  <img src="docs/media/scorecard.png" alt="Measured surface-area scorecard" width="49%">
+  <img src="docs/media/scorecard.png" alt="Measured surface-area signals" width="49%">
   <img src="docs/media/risk-ledger.png" alt="Claimed risk ledger" width="49%">
 </p>
 
-### A visual summary you can read in five seconds
+### A visual read on where to look
 
-Five hand-rolled SVG charts — diff mass, a change treemap, intent-coverage rings,
-measured complexity hotspots, and a **change map** that plots each file by
-downstream reach × churn, so the review-first files pick themselves out.
+A **change map** plots every changed file by downstream reach × churn, so the
+review-first files pick themselves out — it headlines the change-summary band,
+right next to the risk ledger. Open **Deeper analysis** (expanded by default) for
+the supporting visuals — architecture diagrams, intent-coverage rings, and
+measured complexity hotspots — plus the full measured signal list: test-vs-code
+lines, debt markers, and sensitive-path badges (`auth`, dependencies, secrets,
+pipelines, Dockerfiles…). Every file in the rail carries its own inline diff-mass
+sparkline.
 
 <p align="center">
-  <img src="docs/media/visual-summary.png" alt="Visual summary charts" width="100%">
+  <img src="docs/media/visual-summary.png" alt="Change map and deeper-analysis charts" width="100%">
 </p>
 
 ### Architecture diagrams, authored by the change

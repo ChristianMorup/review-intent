@@ -359,7 +359,8 @@ describe("review session round-trip", () => {
     const sessionId = await openReviewSession("<title>x</title>");
     const base = cap.url();
 
-    // Open the SSE stream and read the first answer frame.
+    // Open the SSE stream and drain frames until the answer arrives (the
+    // server sends a `: connected` comment frame first).
     const ac = new AbortController();
     const streamP = fetch(base + "events", { signal: ac.signal });
     // Give the server a tick to register the stream.
@@ -370,8 +371,12 @@ describe("review session round-trip", () => {
 
     const stream = await streamP;
     const reader = stream.body!.getReader();
-    const { value } = await reader.read();
-    const text = new TextDecoder().decode(value);
+    let text = "";
+    while (!text.includes("event: answer")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
     expect(text).toContain("event: answer");
     expect(text).toContain("q:a:1");
     expect(text).toContain("because the cache is request-scoped");
@@ -383,6 +388,28 @@ describe("review session round-trip", () => {
 
   it("deliverAnswer returns false for an unknown session", () => {
     expect(deliverAnswer("sid-nope", "q", "a")).toBe(false);
+  });
+
+  it("deliverAnswer returns false for a settled session", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    await fetch(base);
+    // Submit with no waiter parked: the session settles (settled=true) and is
+    // kept in the map with a stashed terminal event, so this hits the `settled`
+    // guard in deliverAnswer rather than the unknown-session guard.
+    const res = await fetch(base + "submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approve", prompt: "ok" }),
+    });
+    expect(res.status).toBe(200);
+
+    cap.restore();
+    expect(deliverAnswer(sessionId, "q:a:1", "x")).toBe(false);
+    // Drain the stashed terminal so the session doesn't leak.
+    await waitForEvent(sessionId);
   });
 
   it("queues a question that arrives with no waiter, then drains it on the next waitForEvent", async () => {

@@ -251,6 +251,7 @@ function handleRequest(
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
+    res.write(": connected\n\n");
     session.sse.add(res);
     req.on("close", () => session.sse.delete(res));
     return;

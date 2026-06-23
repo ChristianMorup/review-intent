@@ -422,6 +422,34 @@ describe("review session round-trip", () => {
     await waitForEvent(sessionId);
   });
 
+  it("deliverAnswer returns false when no stream is open, but the answer is replayed to a stream that connects afterward", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    // Deliver BEFORE any /events stream is open — must return false (no live recipients).
+    const ok = deliverAnswer(sessionId, "q:a:9", "delayed answer");
+    expect(ok).toBe(false);
+
+    // Now open the /events stream and drain until the replayed answer arrives.
+    const ac = new AbortController();
+    const streamP = fetch(base + "events", { signal: ac.signal });
+    const stream = await streamP;
+    const reader = stream.body!.getReader();
+    let text = "";
+    while (!text.includes("event: answer")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    expect(text).toContain("q:a:9");
+    expect(text).toContain("delayed answer");
+
+    ac.abort();
+    cap.restore();
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
   it("queues a question that arrives with no waiter, then drains it on the next waitForEvent", async () => {
     const cap = captureUrl();
     const sessionId = await openReviewSession("<title>x</title>");

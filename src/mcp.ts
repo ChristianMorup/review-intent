@@ -127,6 +127,7 @@ interface Session {
   server: ReturnType<typeof createServer>;
   sse: Set<ServerResponse>;
   questions: AskQuestion[];
+  answers: Map<string, string>;
   waiter: ((e: ReviewEvent) => void) | null;
   pendingTerminal: ReviewEvent | null;
   settled: boolean;
@@ -260,6 +261,11 @@ function handleRequest(
     res.write(": connected\n\n");
     session.sse.add(res);
     req.on("close", () => session.sse.delete(res));
+    // Replay any answers already delivered so a reconnecting EventSource doesn't
+    // permanently miss them. The page handles re-delivery idempotently by questionId.
+    for (const [qid, ans] of session.answers) {
+      res.write(`event: answer\ndata: ${JSON.stringify({ questionId: qid, answer: ans })}\n\n`);
+    }
     return;
   }
 
@@ -310,6 +316,7 @@ export function openReviewSession(
       server: undefined as unknown as ReturnType<typeof createServer>,
       sse: new Set(),
       questions: [],
+      answers: new Map(),
       waiter: null,
       pendingTerminal: null,
       settled: false,
@@ -383,13 +390,17 @@ export function waitForEvent(sessionId: string): Promise<ReviewEvent> {
 export function deliverAnswer(sessionId: string, questionId: string, answer: string): boolean {
   const session = sessions.get(sessionId);
   if (!session || session.settled) return false;
+  // Record the latest answer per question so a stream that (re)connects later
+  // can replay it — the page is idempotent on re-delivery (keyed by questionId).
+  session.answers.set(questionId, answer);
   // JSON.stringify yields a single line, so the SSE `data:` frame stays intact
   // even when the answer contains newlines.
   const payload = JSON.stringify({ questionId, answer });
   for (const res of session.sse) {
     res.write(`event: answer\ndata: ${payload}\n\n`);
   }
-  return true;
+  // True only if at least one open stream actually received it now.
+  return session.sse.size > 0;
 }
 
 // ── Side-effecting runner (not unit-tested; manual smoke test) ───────────────
@@ -487,9 +498,12 @@ export async function runMcp(_argv: string[]): Promise<void> {
       inputSchema: answerToolInputShape,
     },
     async (args) => {
-      deliverAnswer(args.sessionId, args.questionId, args.answer);
+      const shown = deliverAnswer(args.sessionId, args.questionId, args.answer);
       const event = await waitForEvent(args.sessionId);
-      return { content: [{ type: "text", text: formatEventResult(event) }] };
+      const note = shown
+        ? ""
+        : "(Note: no review tab was connected, so your answer was not shown live. It was recorded and will appear if the page reconnects, but the reviewer may have closed the tab.)\n\n";
+      return { content: [{ type: "text", text: note + formatEventResult(event) }] };
     },
   );
 

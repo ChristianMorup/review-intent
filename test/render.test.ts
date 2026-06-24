@@ -175,10 +175,10 @@ describe("renderHtml", () => {
     expect(html).toContain("concurrency test");
   });
 
-  it("drops the standalone diff-mass, treemap and reach-ripple charts", () => {
+  it("renders diff-mass and treemap, but not the reach-ripple chart", () => {
+    expect(html).toContain('class="viz-diffmass"');
+    expect(html).toContain('class="viz-treemap"');
     expect(html).not.toContain('class="viz-ripple"');
-    expect(html).not.toContain('class="viz-diffmass"');
-    expect(html).not.toContain('class="viz-treemap"');
   });
 
   it("describes and tooltips the coverage rings", () => {
@@ -194,11 +194,20 @@ describe("renderHtml", () => {
     expect(cx).toContain("independent paths through the code");
   });
 
-  it("renders the surviving charts (change map, rings, complexity) in deeper analysis", () => {
+  it("renders the deeper-analysis charts (diff-mass, treemap, change map, rings, complexity)", () => {
     expect(html).toContain('class="deeper"');
+    expect(html).toContain('class="viz-diffmass"');
+    expect(html).toContain('class="viz-treemap"');
     expect(html).toContain('class="viz-scatter"');
     expect(html).toContain('class="viz-rings"');
     expect(html).toContain('class="viz-complexity"');
+  });
+
+  it("diff-mass and treemap describe their measured churn", () => {
+    expect(html).toContain("Diff mass");
+    expect(html).toContain("± lines per file");
+    expect(html).toContain("Change treemap");
+    expect(html).toContain("area = churn");
   });
 
   it("shows intent-coverage percentages in the rings", () => {

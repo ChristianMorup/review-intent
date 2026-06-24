@@ -10,6 +10,7 @@ import type {
 } from "./types.js";
 import { reviewOrder, type RankedFile } from "./review-order.js";
 import { THEMES, themeCss } from "./themes.js";
+import { isCodePath, isTestPath, isNoisePath } from "./scorecard.js";
 
 /** Pure: produce a self-contained HTML document from the review model.
  *  With `opts.submit` the page gains an Approve / Request-changes bar that POSTs
@@ -346,9 +347,214 @@ function renderRisks(risks: Risk[]): string {
 const C_ADD = "var(--viz-add)";
 const C_ADD_INK = "var(--viz-add-ink)";
 const C_DEL = "var(--viz-del)";
+const C_DEL_INK = "var(--viz-del-ink)";
 const C_WARN = "var(--viz-warn)";
 const C_ACCENT = "var(--viz-accent)";
 const C_LINE = "var(--viz-line)";
+
+// ── File-level churn stats + the diff-mass and treemap charts ──
+
+type FileCategory = "test" | "code" | "noise" | "other";
+
+interface FileStat {
+  path: string;
+  added: number;
+  removed: number;
+  churn: number;
+  category: FileCategory;
+  hasIntent: boolean;
+}
+
+const CAT_COLOR: Record<FileCategory, string> = {
+  test: C_ADD_INK,
+  code: C_ACCENT,
+  noise: "var(--viz-noise)",
+  other: "var(--viz-other)",
+};
+
+const DIR_PALETTE = [
+  "var(--viz-s1)", "var(--viz-s2)", "var(--viz-s3)", "var(--viz-s4)",
+  "var(--viz-s5)", "var(--viz-s6)", "var(--viz-s7)", "var(--viz-s8)",
+];
+
+function dirColor(p: string): string {
+  const dir = p.includes("/") ? p.slice(0, p.indexOf("/")) : "·";
+  let h = 0;
+  for (const ch of dir) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return DIR_PALETTE[h % DIR_PALETTE.length];
+}
+
+function fileStats(model: ReviewModel): FileStat[] {
+  return model.files.map((f): FileStat => {
+    let added = 0;
+    let removed = 0;
+    for (const h of f.hunks) {
+      for (const l of h.lines) {
+        if (l.type === "add") added++;
+        else if (l.type === "del") removed++;
+      }
+    }
+    const category: FileCategory = isTestPath(f.path)
+      ? "test"
+      : isNoisePath(f.path)
+        ? "noise"
+        : isCodePath(f.path)
+          ? "code"
+          : "other";
+    return { path: f.path, added, removed, churn: added + removed, category, hasIntent: !!f.why };
+  });
+}
+
+/** Diff mass — diverging add/remove bars per file, sorted by churn. */
+function renderDiffMass(stats: FileStat[]): string {
+  if (stats.length === 0) return "";
+  const rows = [...stats].sort((a, b) => b.churn - a.churn);
+  const cap = 25;
+  const shown = rows.slice(0, cap);
+  const hidden = rows.length - shown.length;
+  const maxSide = Math.max(1, ...shown.map((s) => Math.max(s.added, s.removed)));
+
+  const W = 720;
+  const rowH = 22;
+  const pad = 10;
+  const plotL = 200;
+  const plotR = W - 86;
+  const xc = (plotL + plotR) / 2;
+  const half = (plotR - plotL) / 2 - 4;
+  const scale = half / maxSide;
+  const H = pad * 2 + shown.length * rowH;
+
+  const body = shown
+    .map((f, i) => {
+      const y = pad + i * rowH;
+      const mid = y + rowH / 2;
+      const remW = f.removed * scale;
+      const addW = f.added * scale;
+      const mark = f.hasIntent
+        ? `<circle cx="9" cy="${mid}" r="3" fill="${C_ADD}" />`
+        : `<circle cx="9" cy="${mid}" r="3" fill="none" stroke="${C_DEL}" stroke-width="1.5" />`;
+      const tip = `${f.path} — +${f.added} −${f.removed} (${f.category})${f.hasIntent ? "" : " · no intent written"}`;
+      return `<g><title>${esc(tip)}</title>${mark}
+    <text x="18" y="${mid + 3}" class="viz-label" fill="${CAT_COLOR[f.category]}">${esc(shortPath(f.path, 26))}</text>
+    <rect x="${(xc - remW).toFixed(1)}" y="${y + 4}" width="${remW.toFixed(1)}" height="${rowH - 8}" fill="${C_DEL}" fill-opacity="0.9" />
+    <rect x="${xc.toFixed(1)}" y="${y + 4}" width="${addW.toFixed(1)}" height="${rowH - 8}" fill="${C_ADD}" fill-opacity="0.9" />
+    <text x="${plotR + 6}" y="${mid + 3}" class="viz-num">+${f.added} −${f.removed}</text></g>`;
+    })
+    .join("\n    ");
+
+  const axis = `<line x1="${xc}" y1="${pad}" x2="${xc}" y2="${H - pad}" class="viz-axis" />`;
+  const more =
+    hidden > 0 ? ` ${hidden} more file${plural(hidden)} not charted (showing the ${cap} largest).` : "";
+
+  return `<div class="card viz viz-span zoomable">
+  <h3>Diff mass <span class="src">± lines per file</span></h3>
+  <svg class="viz-diffmass" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
+    ${axis}
+    ${body}
+  </svg>
+  <p class="viz-cap">One row per changed file, longest diff first: bar length = lines added (green, right) vs removed (red, left). The dot is filled ● when intent was written for the file, hollow ○ when it wasn't. Hover a row for its path and counts.${more}</p>
+</div>`;
+}
+
+/** Change treemap — squarified, area ∝ churn, colour = directory. */
+function renderTreemap(stats: FileStat[]): string {
+  if (stats.length === 0) return "";
+  const W = 720;
+  const H = 300;
+  const sorted = [...stats].sort((a, b) => b.churn - a.churn);
+  const total = sorted.reduce((n, s) => n + s.churn, 0);
+  const scale = (W * H) / total;
+  const items = sorted.map((s) => ({ ...s, area: s.churn * scale }));
+  const rects = squarify(items, { x: 0, y: 0, w: W, h: H });
+
+  const cells = rects
+    .map((r) => {
+      const stroke = r.hasIntent ? "var(--viz-cell-stroke)" : C_DEL_INK;
+      const sw = r.hasIntent ? 1 : 2;
+      const label =
+        r.w > 54 && r.h > 18
+          ? `<text x="${(r.x + 5).toFixed(1)}" y="${(r.y + 15).toFixed(1)}" class="viz-cell-label">${esc(shortPath(basename(r.path), Math.max(3, Math.floor(r.w / 7))))}</text>`
+          : "";
+      const tip = `${r.path} — ${r.churn} line${plural(r.churn)} changed${r.hasIntent ? "" : " · no intent written"}`;
+      return `<g><title>${esc(tip)}</title><rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="${dirColor(r.path)}" fill-opacity="0.82" stroke="${stroke}" stroke-width="${sw}" />${label}</g>`;
+    })
+    .join("\n    ");
+
+  return `<div class="card viz viz-span zoomable">
+  <h3>Change treemap <span class="src">area = churn</span></h3>
+  <svg class="viz-treemap" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img">
+    ${cells}
+  </svg>
+  <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
+</div>`;
+}
+
+interface SqItem extends FileStat {
+  area: number;
+}
+interface SqRect extends SqItem {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Squarified treemap layout (Bruls et al.) — deterministic, no I/O. */
+function squarify(items: SqItem[], rect: { x: number; y: number; w: number; h: number }): SqRect[] {
+  const out: SqRect[] = [];
+  const queue = items.slice();
+  let { x, y, w, h } = rect;
+  let row: SqItem[] = [];
+
+  const sum = (r: SqItem[]) => r.reduce((n, it) => n + it.area, 0);
+  const worst = (r: SqItem[], side: number): number => {
+    const s = sum(r);
+    if (s === 0) return Infinity;
+    const max = Math.max(...r.map((it) => it.area));
+    const min = Math.min(...r.map((it) => it.area));
+    const s2 = s * s;
+    const side2 = side * side;
+    return Math.max((side2 * max) / s2, s2 / (side2 * min));
+  };
+  const layoutRow = (r: SqItem[]): void => {
+    const s = sum(r);
+    if (w <= h) {
+      const stripH = s / w;
+      let cxp = x;
+      for (const it of r) {
+        const cw = it.area / stripH;
+        out.push({ ...it, x: cxp, y, w: cw, h: stripH });
+        cxp += cw;
+      }
+      y += stripH;
+      h -= stripH;
+    } else {
+      const stripW = s / h;
+      let cyp = y;
+      for (const it of r) {
+        const ch = it.area / stripW;
+        out.push({ ...it, x, y: cyp, w: stripW, h: ch });
+        cyp += ch;
+      }
+      x += stripW;
+      w -= stripW;
+    }
+  };
+
+  while (queue.length) {
+    const side = Math.min(w, h);
+    const next = queue[0];
+    if (row.length === 0 || worst(row, side) >= worst([...row, next], side)) {
+      row.push(next);
+      queue.shift();
+    } else {
+      layoutRow(row);
+      row = [];
+    }
+  }
+  if (row.length) layoutRow(row);
+  return out;
+}
 
 /** Deeper analysis: the demoted analytics, behind one open disclosure so they
  *  stay available without piling up above the diffs. Architecture (the authored
@@ -357,9 +563,12 @@ const C_LINE = "var(--viz-line)";
  *  short disclosure rather than a wall of blank panels. */
 function renderDeeperAnalysis(model: ReviewModel): string {
   const diagrams = renderDiagrams(model);
+  const stats = fileStats(model).filter((s) => s.churn > 0);
   const grid = [
-    renderCoverageRings(model.intentCoverage),
+    renderDiffMass(stats),
+    renderTreemap(stats),
     renderComplexityHotspots(model.complexity),
+    renderCoverageRings(model.intentCoverage),
     renderScorecardSignals(model),
   ].filter(Boolean);
   const tests = renderTests(model.tests);
@@ -1205,7 +1414,7 @@ body {
 /* ── Visual-summary charts (change map · coverage rings · complexity) ── */
 .viz.viz-span { grid-column: auto; }
 .viz svg { width: 100%; height: auto; display: block; }
-.viz-complexity, .viz-scatter { max-width: 720px; }
+.viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
 .zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
 .zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .zoomable::after {
@@ -1226,6 +1435,7 @@ body {
 .viz-danger { fill: var(--viz-zone); }
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
+.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
 .viz-dot-hot { fill: var(--del); }
 .viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }

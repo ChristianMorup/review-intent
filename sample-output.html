@@ -276,7 +276,7 @@ body {
 /* ── Visual-summary charts (change map · coverage rings · complexity) ── */
 .viz.viz-span { grid-column: auto; }
 .viz svg { width: 100%; height: auto; display: block; }
-.viz-complexity, .viz-scatter { max-width: 720px; }
+.viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
 .zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
 .zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .zoomable::after {
@@ -297,6 +297,7 @@ body {
 .viz-danger { fill: var(--viz-zone); }
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
+.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
 .viz-dot-hot { fill: var(--del); }
 .viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
@@ -1580,6 +1581,67 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   </div>
 </div>
     <div class="deeper-grid">
+    <div class="card viz viz-span zoomable">
+  <h3>Diff mass <span class="src">± lines per file</span></h3>
+  <svg class="viz-diffmass" viewBox="0 0 720 152" preserveAspectRatio="xMidYMid meet" role="img">
+    <line x1="417" y1="10" x2="417" y2="142" class="viz-axis" />
+    <g><title>src/render.ts — +200 −40 (code)</title><circle cx="9" cy="21" r="3" fill="var(--viz-add)" />
+    <text x="18" y="24" class="viz-label" fill="var(--viz-accent)">src/render.ts</text>
+    <rect x="374.4" y="14" width="42.6" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="14" width="213.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="24" class="viz-num">+200 −40</text></g>
+    <g><title>src/scorecard.ts — +40 −6 (code)</title><circle cx="9" cy="43" r="3" fill="var(--viz-add)" />
+    <text x="18" y="46" class="viz-label" fill="var(--viz-accent)">src/scorecard.ts</text>
+    <rect x="410.6" y="36" width="6.4" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="36" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="46" class="viz-num">+40 −6</text></g>
+    <g><title>package-lock.json — +0 −44 (noise) · no intent written</title><circle cx="9" cy="65" r="3" fill="none" stroke="var(--viz-del)" stroke-width="1.5" />
+    <text x="18" y="68" class="viz-label" fill="var(--viz-noise)">package-lock.json</text>
+    <rect x="370.1" y="58" width="46.9" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="58" width="0.0" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="68" class="viz-num">+0 −44</text></g>
+    <g><title>test/render.test.ts — +40 −0 (test)</title><circle cx="9" cy="87" r="3" fill="var(--viz-add)" />
+    <text x="18" y="90" class="viz-label" fill="var(--viz-add-ink)">test/render.test.ts</text>
+    <rect x="417.0" y="80" width="0.0" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="80" width="42.6" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="90" class="viz-num">+40 −0</text></g>
+    <g><title>src/types.ts — +30 −4 (code)</title><circle cx="9" cy="109" r="3" fill="var(--viz-add)" />
+    <text x="18" y="112" class="viz-label" fill="var(--viz-accent)">src/types.ts</text>
+    <rect x="412.7" y="102" width="4.3" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="102" width="31.9" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="112" class="viz-num">+30 −4</text></g>
+    <g><title>src/match.ts — +18 −2 (code)</title><circle cx="9" cy="131" r="3" fill="var(--viz-add)" />
+    <text x="18" y="134" class="viz-label" fill="var(--viz-accent)">src/match.ts</text>
+    <rect x="414.9" y="124" width="2.1" height="14" fill="var(--viz-del)" fill-opacity="0.9" />
+    <rect x="417.0" y="124" width="19.2" height="14" fill="var(--viz-add)" fill-opacity="0.9" />
+    <text x="640" y="134" class="viz-num">+18 −2</text></g>
+  </svg>
+  <p class="viz-cap">One row per changed file, longest diff first: bar length = lines added (green, right) vs removed (red, left). The dot is filled ● when intent was written for the file, hollow ○ when it wasn't. Hover a row for its path and counts.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Change treemap <span class="src">area = churn</span></h3>
+  <svg class="viz-treemap" viewBox="0 0 720 300" preserveAspectRatio="none" role="img">
+    <g><title>src/render.ts — 240 lines changed</title><rect x="0.0" y="0.0" width="407.5" height="300.0" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="5.0" y="15.0" class="viz-cell-label">render.ts</text></g>
+    <g><title>src/scorecard.ts — 46 lines changed</title><rect x="407.5" y="0.0" width="152.8" height="153.3" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="412.5" y="15.0" class="viz-cell-label">scorecard.ts</text></g>
+    <g><title>package-lock.json — 44 lines changed · no intent written</title><rect x="407.5" y="153.3" width="152.8" height="146.7" fill="var(--viz-s8)" fill-opacity="0.82" stroke="var(--viz-del-ink)" stroke-width="2" /><text x="412.5" y="168.3" class="viz-cell-label">package-lock.json</text></g>
+    <g><title>test/render.test.ts — 40 lines changed</title><rect x="560.4" y="0.0" width="159.6" height="127.7" fill="var(--viz-s3)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="15.0" class="viz-cell-label">render.test.ts</text></g>
+    <g><title>src/types.ts — 34 lines changed</title><rect x="560.4" y="127.7" width="159.6" height="108.5" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="142.7" class="viz-cell-label">types.ts</text></g>
+    <g><title>src/match.ts — 20 lines changed</title><rect x="560.4" y="236.2" width="159.6" height="63.8" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="251.2" class="viz-cell-label">match.ts</text></g>
+  </svg>
+  <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
+</div>
+    <div class="card viz viz-span zoomable">
+  <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>
+  <svg class="viz-complexity" viewBox="0 0 720 68" preserveAspectRatio="xMidYMid meet" role="img">
+    <g><title>buildScorecard — CCN 21 (threshold 15) at src/scorecard.ts:31</title><text x="6" y="25" class="viz-label">buildScorecard · scorecard.ts:31</text>
+    <rect x="300" y="14" width="360.0" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="666.0" y="25" class="viz-num">21</text></g>
+    <g><title>renderScorecard — CCN 18 (threshold 15) at src/render.ts:60</title><text x="6" y="49" class="viz-label">renderScorecard · render.ts:60</text>
+    <rect x="300" y="38" width="308.6" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
+    <text x="614.6" y="49" class="viz-num">18</text></g>
+  </svg>
+  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of 15; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
+</div>
     <div class="card viz zoomable">
   <h3>Intent coverage <span class="src">measured</span></h3>
   <div class="viz-rings">
@@ -1599,18 +1661,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 </svg>
   </div>
   <p class="viz-cap">Share of changed files (each needs a what + why) and diff hunks (each needs an anchored note) that carry agent-written intent. The completeness gate normally forces both to 100% — anything lower means the page was rendered with <code>--allow-gaps</code> and some of the change is unexplained.</p>
-</div>
-    <div class="card viz viz-span zoomable">
-  <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>
-  <svg class="viz-complexity" viewBox="0 0 720 68" preserveAspectRatio="xMidYMid meet" role="img">
-    <g><title>buildScorecard — CCN 21 (threshold 15) at src/scorecard.ts:31</title><text x="6" y="25" class="viz-label">buildScorecard · scorecard.ts:31</text>
-    <rect x="300" y="14" width="360.0" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
-    <text x="666.0" y="25" class="viz-num">21</text></g>
-    <g><title>renderScorecard — CCN 18 (threshold 15) at src/render.ts:60</title><text x="6" y="49" class="viz-label">renderScorecard · render.ts:60</text>
-    <rect x="300" y="38" width="308.6" height="16" fill="var(--viz-warn)" fill-opacity="0.85" />
-    <text x="614.6" y="49" class="viz-num">18</text></g>
-  </svg>
-  <p class="viz-cap">Changed functions whose measured cyclomatic complexity (CCN — the number of independent paths through the code) is at or above the repo threshold of 15; bars at ≥ 2× threshold turn red. These are the functions most likely to hide a bug or be hard to test. Hover a bar for its file and line.</p>
 </div>
     <div class="card scorecard">
   <h3>Signals <span class="src">measured</span></h3>

@@ -7,14 +7,19 @@ vi.mock("open", () => ({ default: vi.fn(async () => undefined) }));
 
 import {
   reviewToolInputShape,
+  answerToolInputShape,
   parseSubmission,
+  parseAsk,
   formatToolResult,
+  formatEventResult,
   authoringGuide,
-  serveAndBlock,
+  openReviewSession,
+  waitForEvent,
+  deliverAnswer,
 } from "../src/mcp.js";
 
 // Mirrors complexity.test.ts: only the PURE exports are unit-tested. The http
-// server, browser launch, and stdio transport (runMcp/serveAndBlock) are
+// server, browser launch, and stdio transport (runMcp) are
 // side-effecting and exercised by a manual smoke test, not vitest.
 
 describe("formatToolResult", () => {
@@ -42,6 +47,37 @@ describe("formatToolResult", () => {
       "Reviewer decision: request-changes\n\nChanges requested, but no specific feedback was provided.";
     expect(formatToolResult("request-changes", "")).toBe(expected);
     expect(formatToolResult("request-changes", "   ")).toBe(expected);
+  });
+});
+
+describe("formatEventResult", () => {
+  it("turns a question event into instructions naming the session + question id", () => {
+    const text = formatEventResult({
+      kind: "question",
+      sessionId: "sid-1",
+      questionId: "q:src/a.ts:12",
+      ref: "src/a.ts @ L12",
+      question: "Why drop the cache here?",
+    });
+    expect(text).toContain("Why drop the cache here?");
+    expect(text).toContain("src/a.ts @ L12");
+    expect(text).toContain("answer_review_question");
+    expect(text).toContain("sid-1");
+    expect(text).toContain("q:src/a.ts:12");
+  });
+
+  it("delegates a submitted event to formatToolResult", () => {
+    const text = formatEventResult({
+      kind: "submitted",
+      sessionId: "sid-1",
+      submission: { decision: "request-changes", prompt: "do X" },
+    });
+    expect(text).toBe(formatToolResult("request-changes", "do X"));
+  });
+
+  it("returns the no-decision message for an abandoned event", () => {
+    const text = formatEventResult({ kind: "abandoned", sessionId: "sid-1" });
+    expect(text).toContain("without submitting a decision");
   });
 });
 
@@ -95,6 +131,28 @@ describe("parseSubmission", () => {
   });
 });
 
+describe("parseAsk", () => {
+  it("parses a valid ask object", () => {
+    expect(parseAsk('{"questionId":"q:src/a.ts:12","ref":"src/a.ts @ L12","question":"why?"}')).toEqual({
+      questionId: "q:src/a.ts:12",
+      ref: "src/a.ts @ L12",
+      question: "why?",
+    });
+  });
+
+  it("throws on a missing field", () => {
+    expect(() => parseAsk('{"questionId":"q","ref":"r"}')).toThrow();
+  });
+
+  it("throws on a non-string field", () => {
+    expect(() => parseAsk('{"questionId":"q","ref":"r","question":3}')).toThrow();
+  });
+
+  it("throws on malformed JSON", () => {
+    expect(() => parseAsk("nope")).toThrow();
+  });
+});
+
 describe("reviewToolInputShape", () => {
   it("is a raw zod shape with exactly the expected keys", () => {
     expect(Object.keys(reviewToolInputShape).sort()).toEqual(
@@ -120,9 +178,16 @@ describe("reviewToolInputShape", () => {
   });
 });
 
-describe("serveAndBlock round-trip", () => {
-  // Capture the "Review page: http://127.0.0.1:<port>/" stderr line to learn
-  // the ephemeral port the server bound to (browser launch is mocked above).
+describe("answerToolInputShape", () => {
+  it("is a raw zod shape with sessionId, questionId, answer", () => {
+    expect(Object.keys(answerToolInputShape).sort()).toEqual(["answer", "questionId", "sessionId"]);
+    const schema = z.object(answerToolInputShape);
+    expect(schema.safeParse({ sessionId: "sid-1", questionId: "q:a:1", answer: "because" }).success).toBe(true);
+    expect(schema.safeParse({ sessionId: "sid-1", questionId: "q:a:1" }).success).toBe(false);
+  });
+});
+
+describe("review session round-trip", () => {
   function captureUrl(): { restore: () => void; url: () => string } {
     let captured = "";
     const orig = process.stderr.write.bind(process.stderr);
@@ -134,35 +199,22 @@ describe("serveAndBlock round-trip", () => {
       if (m) captured = m[1];
       return true;
     }) as typeof process.stderr.write;
-    return {
-      restore: () => {
-        process.stderr.write = orig;
-      },
-      url: () => captured,
-    };
-  }
-
-  async function waitForUrl(get: () => string): Promise<string> {
-    for (let i = 0; i < 100 && !get(); i++) {
-      await new Promise((r) => setTimeout(r, 5));
-    }
-    return get();
+    return { restore: () => { process.stderr.write = orig; }, url: () => captured };
   }
 
   it("serves the HTML on GET / and resolves with the parsed POST /submit body", async () => {
     const cap = captureUrl();
     const html = "<!DOCTYPE html><title>x</title><body>REVIEW_PAGE_MARKER";
-    const blocked = serveAndBlock(html);
-
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession(html);
+    const base = cap.url();
     expect(base).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/$/);
 
-    // GET / returns the submit-mode HTML.
+    const event = waitForEvent(sessionId);
+
     const page = await fetch(base);
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("REVIEW_PAGE_MARKER");
 
-    // POST /submit resolves the blocking promise with the parsed submission.
     const res = await fetch(base + "submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -171,18 +223,19 @@ describe("serveAndBlock round-trip", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("you can close this tab");
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({
+    expect(await event).toEqual({
       kind: "submitted",
+      sessionId,
       submission: { decision: "request-changes", prompt: "tighten the loop" },
     });
   });
 
   it("rejects a malformed /submit body with 400 and keeps blocking", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>");
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
     const bad = await fetch(base + "submit", {
       method: "POST",
@@ -191,7 +244,6 @@ describe("serveAndBlock round-trip", () => {
     });
     expect(bad.status).toBe(400);
 
-    // The server is still up and still blocking; a valid submit then resolves it.
     const ok = await fetch(base + "submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -199,47 +251,46 @@ describe("serveAndBlock round-trip", () => {
     });
     expect(ok.status).toBe(200);
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({
+    expect(await event).toEqual({
       kind: "submitted",
+      sessionId,
       submission: { decision: "approve", prompt: "" },
     });
   });
 
   it("resolves as abandoned when the page beacons /cancel", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>");
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
-    await fetch(base); // page connects
+    await fetch(base);
     const res = await fetch(base + "cancel", { method: "POST" });
     expect(res.status).toBe(204);
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({ kind: "abandoned" });
+    expect(await event).toEqual({ kind: "abandoned", sessionId });
   });
 
   it("resolves as abandoned when heartbeats stop after the page connected", async () => {
     const cap = captureUrl();
-    // Tiny liveness window so the test is fast and deterministic.
-    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
-    await fetch(base); // page connects, then sends no heartbeats
-    const result = await blocked;
+    await fetch(base);
     cap.restore();
-    expect(result).toEqual({ kind: "abandoned" });
+    expect(await event).toEqual({ kind: "abandoned", sessionId });
   });
 
   it("does not abandon while heartbeats keep arriving, then accepts a submit", async () => {
     const cap = captureUrl();
-    const blocked = serveAndBlock("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
-    const base = await waitForUrl(cap.url);
+    const sessionId = await openReviewSession("<title>x</title>", { liveGraceMs: 120, checkMs: 40 });
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
 
     await fetch(base);
-    // Beat a few times across more than one grace window — must NOT abandon.
     for (let i = 0; i < 4; i++) {
       await new Promise((r) => setTimeout(r, 60));
       await fetch(base + "heartbeat", { method: "POST" });
@@ -250,8 +301,192 @@ describe("serveAndBlock round-trip", () => {
       body: JSON.stringify({ decision: "approve", prompt: "ok" }),
     });
 
-    const result = await blocked;
     cap.restore();
-    expect(result).toEqual({ kind: "submitted", submission: { decision: "approve", prompt: "ok" } });
+    expect(await event).toEqual({ kind: "submitted", sessionId, submission: { decision: "approve", prompt: "ok" } });
+  });
+
+  it("returns abandoned for an unknown session id", async () => {
+    expect(await waitForEvent("sid-does-not-exist")).toEqual({
+      kind: "abandoned",
+      sessionId: "sid-does-not-exist",
+    });
+  });
+
+  it("turns a POST /ask into a question event", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
+
+    await fetch(base);
+    const res = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:1", ref: "src/a.ts @ L1", question: "why?" }),
+    });
+    expect(res.status).toBe(204);
+
+    cap.restore();
+    expect(await event).toEqual({
+      kind: "question",
+      sessionId,
+      questionId: "q:a:1",
+      ref: "src/a.ts @ L1",
+      question: "why?",
+    });
+    // Clean up the still-open session so it doesn't leak across tests.
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("rejects a malformed /ask body with 400 and keeps the session open", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    const event = waitForEvent(sessionId);
+
+    await fetch(base);
+    const bad = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{ not json",
+    });
+    expect(bad.status).toBe(400);
+
+    const good = await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:1", ref: "r", question: "q" }),
+    });
+    expect(good.status).toBe(204);
+
+    cap.restore();
+    expect((await event).kind).toBe("question");
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("pushes an answer to the open /events stream via deliverAnswer", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    // Open the SSE stream and drain frames until the answer arrives (the
+    // server sends a `: connected` comment frame first).
+    const ac = new AbortController();
+    const streamP = fetch(base + "events", { signal: ac.signal });
+    // Give the server a tick to register the stream.
+    await new Promise((r) => setTimeout(r, 30));
+
+    const ok = deliverAnswer(sessionId, "q:a:1", "because the cache is request-scoped");
+    expect(ok).toBe(true);
+
+    const stream = await streamP;
+    const reader = stream.body!.getReader();
+    let text = "";
+    while (!text.includes("event: answer")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    expect(text).toContain("event: answer");
+    expect(text).toContain("q:a:1");
+    expect(text).toContain("because the cache is request-scoped");
+
+    ac.abort();
+    cap.restore();
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("deliverAnswer returns false for an unknown session", () => {
+    expect(deliverAnswer("sid-nope", "q", "a")).toBe(false);
+  });
+
+  it("deliverAnswer returns false for a settled session", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    await fetch(base);
+    // Submit with no waiter parked: the session settles (settled=true) and is
+    // kept in the map with a stashed terminal event, so this hits the `settled`
+    // guard in deliverAnswer rather than the unknown-session guard.
+    const res = await fetch(base + "submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approve", prompt: "ok" }),
+    });
+    expect(res.status).toBe(200);
+
+    cap.restore();
+    expect(deliverAnswer(sessionId, "q:a:1", "x")).toBe(false);
+    // Drain the stashed terminal so the session doesn't leak.
+    await waitForEvent(sessionId);
+  });
+
+  it("deliverAnswer returns false when no stream is open, but the answer is replayed to a stream that connects afterward", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+
+    // Deliver BEFORE any /events stream is open — must return false (no live recipients).
+    const ok = deliverAnswer(sessionId, "q:a:9", "delayed answer");
+    expect(ok).toBe(false);
+
+    // Now open the /events stream and drain until the replayed answer arrives.
+    const ac = new AbortController();
+    const streamP = fetch(base + "events", { signal: ac.signal });
+    const stream = await streamP;
+    const reader = stream.body!.getReader();
+    let text = "";
+    while (!text.includes("event: answer")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    expect(text).toContain("q:a:9");
+    expect(text).toContain("delayed answer");
+
+    ac.abort();
+    cap.restore();
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("queues a question that arrives with no waiter, then drains it on the next waitForEvent", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    await fetch(base);
+
+    // No waitForEvent parked yet: the ask must queue, not be lost.
+    await fetch(base + "ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionId: "q:a:2", ref: "r", question: "queued?" }),
+    });
+
+    const event = await waitForEvent(sessionId);
+    cap.restore();
+    expect(event).toEqual({ kind: "question", sessionId, questionId: "q:a:2", ref: "r", question: "queued?" });
+    await fetch(base + "cancel", { method: "POST" }).catch(() => {});
+  });
+
+  it("returns a submit that arrives while the agent is away (no waiter parked)", async () => {
+    const cap = captureUrl();
+    const sessionId = await openReviewSession("<title>x</title>");
+    const base = cap.url();
+    await fetch(base);
+
+    // Submit with nobody parked — must be stashed and returned on next wait.
+    await fetch(base + "submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approve", prompt: "lgtm" }),
+    });
+
+    cap.restore();
+    expect(await waitForEvent(sessionId)).toEqual({
+      kind: "submitted",
+      sessionId,
+      submission: { decision: "approve", prompt: "lgtm" },
+    });
   });
 });

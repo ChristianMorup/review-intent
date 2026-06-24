@@ -1491,6 +1491,11 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
 }
 .cbox.open .cinput { display: block; }
+.q-ask { margin-top: 8px; align-self: flex-start; font: inherit; font-size: 0.85em; padding: 3px 10px; border: 1px solid var(--add); border-radius: 6px; background: var(--add-soft, var(--accent-soft)); color: var(--add); cursor: pointer; }
+.q-ask:disabled { opacity: 0.7; cursor: default; }
+.q-answer { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--add); background: var(--accent-soft); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+.q-answer.pending { opacity: 0.7; font-style: italic; }
+.cbox.q-resolved .cbtn-q::after { content: " ✓"; }
 
 /* ── Review feedback panel ── */
 .review-feedback { max-width: var(--maxw); margin: 0 auto; padding: 36px 40px; border-top: 1px solid var(--line); }
@@ -1659,14 +1664,15 @@ function commentScript(model: ReviewModel, submit = false): string {
     // page-level box. Returns { lines: [...], count: n }.
     function collect(akind, files) {
       var lines = [], count = 0;
+      function live(el) { var b = el.closest(".cbox"); return !(akind === "question" && b && b.classList.contains("q-resolved")); }
       files.forEach(function (f) {
         var code = f.querySelector(".path");
         var path = code ? code.textContent : f.id;
         var section = [];
         var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput[data-akind="' + akind + '"]');
-        if (fc && clean(fc.value)) { section.push("- " + indent(fc.value)); count++; }
+        if (fc && clean(fc.value) && live(fc)) { section.push("- " + indent(fc.value)); count++; }
         f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput[data-akind="' + akind + '"]').forEach(function (hc) {
-          if (clean(hc.value)) {
+          if (clean(hc.value) && live(hc)) {
             var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
             section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
             section.push("- " + indent(hc.value));
@@ -1677,7 +1683,7 @@ function commentScript(model: ReviewModel, submit = false): string {
       });
       var pgCid = akind === "question" ? "q:__page__" : "__page__";
       var pg = document.querySelector('.cinput[data-cid="' + pgCid + '"]');
-      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
+      if (pg && clean(pg.value) && live(pg)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
       return { lines: lines, count: count };
     }
 
@@ -1774,6 +1780,53 @@ ${submit ? `
     }
     if (approveBtn) approveBtn.addEventListener("click", function () { send("approve"); });
     if (requestBtn) requestBtn.addEventListener("click", function () { send("request-changes"); });
+    // ── Live Q&A: ask the agent about a hunk while the review stays open ──
+    var es = null;
+    try { es = new EventSource("/events"); } catch (e) {}
+    function ansSlot(cbox) {
+      var slot = cbox.querySelector(".q-answer");
+      if (!slot) { slot = document.createElement("div"); slot.className = "q-answer"; cbox.appendChild(slot); }
+      return slot;
+    }
+    Array.prototype.slice.call(document.querySelectorAll('.cinput[data-akind="question"]')).forEach(function (ta) {
+      var cbox = ta.closest(".cbox"); if (!cbox) return;
+      var ask = document.createElement("button");
+      ask.type = "button"; ask.className = "q-ask"; ask.textContent = "Ask the agent now";
+      ta.insertAdjacentElement("afterend", ask);
+      ask.addEventListener("click", function () {
+        var q = clean(ta.value); if (!q) return;
+        var qid = ta.getAttribute("data-cid");
+        var ref = ta.getAttribute("data-ref") || qid;
+        ask.disabled = true; ask.textContent = "Waiting for the agent…";
+        var slot = ansSlot(cbox); slot.className = "q-answer pending"; slot.textContent = "Waiting for the agent…";
+        fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questionId: qid, ref: ref, question: q })
+        }).then(function (r) {
+          if (!r.ok) {
+            ask.disabled = false; ask.textContent = "Ask the agent now";
+            slot.className = "q-answer"; slot.textContent = "Server error (" + r.status + ") — the review session may have expired.";
+          }
+        }).catch(function () {
+          ask.disabled = false; ask.textContent = "Ask the agent now";
+          slot.className = "q-answer"; slot.textContent = "Could not reach the review server — is it still running?";
+        });
+      });
+    });
+    if (es) es.addEventListener("answer", function (ev) {
+      var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+      var ta = document.querySelector('.cinput[data-cid="' + data.questionId + '"]');
+      if (!ta) return;
+      var cbox = ta.closest(".cbox"); if (!cbox) return;
+      var slot = ansSlot(cbox); slot.className = "q-answer"; slot.textContent = "";
+      var lbl = document.createElement("strong"); lbl.textContent = "Agent: ";
+      slot.appendChild(lbl); slot.appendChild(document.createTextNode(data.answer));
+      cbox.classList.add("q-resolved");
+      var ask = cbox.querySelector(".q-ask");
+      if (ask) { ask.disabled = true; ask.textContent = "Answered ✓"; }
+      assemble();
+    });
 ` : ""}
     assemble();
   })();

@@ -376,6 +376,21 @@ describe("renderHtml", () => {
   });
 });
 
+describe("live Q&A (submit mode)", () => {
+  it("wires EventSource and /ask only when submit is on", () => {
+    const withSubmit = renderHtml(model, { submit: true });
+    expect(withSubmit).toContain('new EventSource("/events")');
+    expect(withSubmit).toContain('"/ask"');
+    expect(withSubmit).toContain("q-ask");
+    expect(withSubmit).toContain("q-resolved");
+
+    const plain = renderHtml(model);
+    expect(plain).not.toContain('new EventSource("/events")');
+    expect(plain).not.toContain('"/ask"');
+    expect(plain).not.toContain('"q-ask"');
+  });
+});
+
 describe("renderHtml when lizard is unavailable", () => {
   it("surfaces the reason instead of silently dropping complexity", () => {
     const html = renderHtml({

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,12 @@ export const reviewToolInputShape = {
   allowGaps: z.boolean().optional(),
 };
 
+export const answerToolInputShape = {
+  sessionId: z.string(),
+  questionId: z.string(),
+  answer: z.string(),
+};
+
 export type Decision = "approve" | "request-changes";
 
 export interface Submission {
@@ -36,14 +42,6 @@ export interface Submission {
   prompt: string;
 }
 
-/**
- * The outcome of a review session: either the reviewer submitted a decision, or
- * they closed the page without one (abandoned). Distinguishing the two keeps the
- * agent from ever reading a closed-without-deciding review as an approval.
- */
-export type ReviewResult =
-  | { kind: "submitted"; submission: Submission }
-  | { kind: "abandoned" };
 
 const SubmissionSchema = z.object({
   decision: z.union([z.literal("approve"), z.literal("request-changes")]),
@@ -54,6 +52,24 @@ const SubmissionSchema = z.object({
 export function parseSubmission(body: string): Submission {
   const parsed: unknown = JSON.parse(body);
   return SubmissionSchema.parse(parsed);
+}
+
+export interface AskQuestion {
+  questionId: string;
+  ref: string;
+  question: string;
+}
+
+const AskSchema = z.object({
+  questionId: z.string(),
+  ref: z.string(),
+  question: z.string(),
+});
+
+/** Parse + validate the POST /ask body. Throws on malformed input. */
+export function parseAsk(body: string): AskQuestion {
+  const parsed: unknown = JSON.parse(body);
+  return AskSchema.parse(parsed);
 }
 
 /**
@@ -78,6 +94,315 @@ export function formatToolResult(decision: Decision, prompt: string): string {
   return `Reviewer decision: ${decision}\n\n${prompt}`;
 }
 
+export type ReviewEvent =
+  | { kind: "question"; sessionId: string; questionId: string; ref: string; question: string }
+  | { kind: "submitted"; sessionId: string; submission: Submission }
+  | { kind: "abandoned"; sessionId: string };
+
+const ABANDONED_TEXT =
+  "The reviewer closed the review without submitting a decision — no approval was given. Re-offer the review or ask how they'd like to proceed.";
+
+/** Shape a review event into the MCP tool-result text the agent acts on. */
+export function formatEventResult(event: ReviewEvent): string {
+  switch (event.kind) {
+    case "question":
+      return (
+        `The reviewer asked a question (id ${event.questionId}) about ${event.ref}:\n\n` +
+        `${event.question}\n\n` +
+        `Answer it by calling answer_review_question with sessionId="${event.sessionId}", ` +
+        `questionId="${event.questionId}", and your answer. Your answer appears live on the ` +
+        `still-open review page and the review continues. Keep answering questions until the ` +
+        `reviewer submits a decision.`
+      );
+    case "submitted":
+      return formatToolResult(event.submission.decision, event.submission.prompt);
+    case "abandoned":
+      return ABANDONED_TEXT;
+  }
+}
+
+// ── Session manager (side-effecting; exercised by round-trip tests) ──────────
+
+interface Session {
+  server: ReturnType<typeof createServer>;
+  sse: Set<ServerResponse>;
+  questions: AskQuestion[];
+  answers: Map<string, string>;
+  waiter: ((e: ReviewEvent) => void) | null;
+  pendingTerminal: ReviewEvent | null;
+  settled: boolean;
+  connected: boolean;
+  lastSeen: number;
+  liveness?: ReturnType<typeof setInterval>;
+}
+
+const sessions = new Map<string, Session>();
+let sessionSeq = 0;
+
+/** Read a request body to completion, then hand it to `done`. Mirrors the
+ *  /submit body handling that used to be inline; fails the request on a stream
+ *  error without tearing the server down. */
+function readBody(req: IncomingMessage, res: ServerResponse, done: (body: string) => void): void {
+  const chunks: Buffer[] = [];
+  req.on("data", (c: Buffer) => chunks.push(c));
+  req.on("end", () => done(Buffer.concat(chunks).toString("utf8")));
+  req.on("error", () => {
+    if (!res.writableEnded) {
+      res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("Bad request");
+    }
+  });
+}
+
+/** Close the server, stop liveness, and end any open SSE streams. The session
+ *  object is kept in the map (so a pending terminal event can still be read);
+ *  callers delete it once that event is consumed. */
+function stopServer(session: Session): void {
+  if (session.liveness) clearInterval(session.liveness);
+  for (const res of session.sse) {
+    try { res.end(); } catch { /* already closed */ }
+  }
+  session.sse.clear();
+  session.server.close();
+}
+
+/** Deliver an event to a parked waiter, or stash it for the next waitForEvent.
+ *  Terminal events (submitted/abandoned) settle and stop the server exactly
+ *  once. Question events resolve a waiter if one is parked, else queue. */
+function resolveEvent(sessionId: string, event: ReviewEvent): void {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+
+  if (event.kind === "question") {
+    const waiter = session.waiter;
+    session.waiter = null;
+    if (waiter) waiter(event);
+    else session.questions.push({ questionId: event.questionId, ref: event.ref, question: event.question });
+    return;
+  }
+
+  if (session.settled) return;
+  session.settled = true;
+  stopServer(session);
+  const waiter = session.waiter;
+  session.waiter = null;
+  if (waiter) {
+    sessions.delete(sessionId);
+    waiter(event);
+  } else {
+    session.pendingTerminal = event;
+  }
+}
+
+const SUBMITTED_PAGE =
+  "<!doctype html><meta charset=utf-8><title>Review submitted</title>" +
+  "<body style=\"font:16px/1.5 system-ui,sans-serif;padding:3rem;color:#211f1b\">" +
+  "<p>Review submitted — you can close this tab.</p>";
+
+function handleRequest(
+  sessionId: string,
+  session: Session,
+  html: string,
+  req: IncomingMessage,
+  res: ServerResponse,
+): void {
+  const method = req.method ?? "GET";
+  const url = req.url ?? "/";
+
+  if (method === "GET" && (url === "/" || url.startsWith("/?"))) {
+    session.connected = true;
+    session.lastSeen = Date.now();
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(html);
+    return;
+  }
+
+  if (method === "POST" && url === "/heartbeat") {
+    session.connected = true;
+    session.lastSeen = Date.now();
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  if (method === "POST" && url === "/cancel") {
+    res.writeHead(204);
+    res.end();
+    resolveEvent(sessionId, { kind: "abandoned", sessionId });
+    return;
+  }
+
+  if (method === "POST" && url === "/submit") {
+    readBody(req, res, (body) => {
+      let submission: Submission;
+      try {
+        submission = parseSubmission(body);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Invalid submission");
+        process.stderr.write(`review-intent mcp: ignored malformed /submit body: ${(err as Error).message}\n`);
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(SUBMITTED_PAGE);
+      resolveEvent(sessionId, { kind: "submitted", sessionId, submission });
+    });
+    return;
+  }
+
+  if (method === "GET" && url === "/events") {
+    session.connected = true;
+    session.lastSeen = Date.now();
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write(": connected\n\n");
+    session.sse.add(res);
+    req.on("close", () => session.sse.delete(res));
+    // Replay any answers already delivered so a reconnecting EventSource doesn't
+    // permanently miss them. The page handles re-delivery idempotently by questionId.
+    for (const [qid, ans] of session.answers) {
+      res.write(`event: answer\ndata: ${JSON.stringify({ questionId: qid, answer: ans })}\n\n`);
+    }
+    return;
+  }
+
+  if (method === "POST" && url === "/ask") {
+    readBody(req, res, (body) => {
+      let ask: AskQuestion;
+      try {
+        ask = parseAsk(body);
+      } catch (err) {
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Invalid question");
+        process.stderr.write(`review-intent mcp: ignored malformed /ask body: ${(err as Error).message}\n`);
+        return;
+      }
+      res.writeHead(204);
+      res.end();
+      resolveEvent(sessionId, {
+        kind: "question",
+        sessionId,
+        questionId: ask.questionId,
+        ref: ask.ref,
+        question: ask.question,
+      });
+    });
+    return;
+  }
+
+  res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("Not found");
+}
+
+/**
+ * Render the submit-mode HTML on an ephemeral local server, open the browser,
+ * register a session, and resolve with its id. The session outlives a single
+ * tool call so the agent can answer questions (Task 4) without closing the page.
+ * Liveness: once the page connects, a heartbeat gap past `liveGraceMs` abandons
+ * the review. All human-facing output goes to stderr.
+ */
+export function openReviewSession(
+  html: string,
+  opts: { liveGraceMs?: number; checkMs?: number } = {},
+): Promise<string> {
+  const liveGraceMs = opts.liveGraceMs ?? 12_000;
+  const checkMs = opts.checkMs ?? 3_000;
+  return new Promise<string>((resolve, reject) => {
+    const sessionId = `sid-${++sessionSeq}`;
+    const session: Session = {
+      server: undefined as unknown as ReturnType<typeof createServer>,
+      sse: new Set(),
+      questions: [],
+      answers: new Map(),
+      waiter: null,
+      pendingTerminal: null,
+      settled: false,
+      connected: false,
+      lastSeen: 0,
+    };
+    const server = createServer((req, res) => handleRequest(sessionId, session, html, req, res));
+    session.server = server;
+
+    server.on("error", (err) => {
+      if (!session.settled) {
+        session.settled = true;
+        if (session.liveness) clearInterval(session.liveness);
+        reject(err);
+      }
+    });
+
+    server.listen(0, "127.0.0.1", () => {
+      sessions.set(sessionId, session);
+      const addr = server.address() as AddressInfo;
+      const reviewUrl = `http://127.0.0.1:${addr.port}/`;
+      process.stderr.write(`Review page: ${reviewUrl}\n`);
+      void open(reviewUrl).catch((err: unknown) => {
+        process.stderr.write(
+          `review-intent mcp: could not open browser (${(err as Error).message}); open ${reviewUrl} manually\n`,
+        );
+      });
+      session.lastSeen = Date.now();
+      session.liveness = setInterval(() => {
+        if (session.connected && Date.now() - session.lastSeen > liveGraceMs) {
+          resolveEvent(sessionId, { kind: "abandoned", sessionId });
+        }
+      }, checkMs);
+      resolve(sessionId);
+    });
+  });
+}
+
+/**
+ * Park until the session's next event. Drains a queued question or a stashed
+ * terminal event immediately; otherwise registers as the sole waiter. An unknown
+ * (closed/never-opened) session resolves abandoned rather than hanging.
+ */
+export function waitForEvent(sessionId: string): Promise<ReviewEvent> {
+  const session = sessions.get(sessionId);
+  if (!session) return Promise.resolve({ kind: "abandoned", sessionId });
+
+  if (session.pendingTerminal) {
+    const event = session.pendingTerminal;
+    sessions.delete(sessionId);
+    return Promise.resolve(event);
+  }
+  const queued = session.questions.shift();
+  if (queued) {
+    return Promise.resolve({ kind: "question", sessionId, ...queued });
+  }
+  if (session.settled) {
+    sessions.delete(sessionId);
+    return Promise.resolve({ kind: "abandoned", sessionId });
+  }
+  return new Promise<ReviewEvent>((resolve) => {
+    session.waiter = resolve;
+  });
+}
+
+/**
+ * Push an answer to every open SSE stream for the session. Returns false when
+ * the session is gone or already settled (the page is no longer listening), so
+ * the caller can still fall through to waitForEvent for a stashed decision.
+ */
+export function deliverAnswer(sessionId: string, questionId: string, answer: string): boolean {
+  const session = sessions.get(sessionId);
+  if (!session || session.settled) return false;
+  // Record the latest answer per question so a stream that (re)connects later
+  // can replay it — the page is idempotent on re-delivery (keyed by questionId).
+  session.answers.set(questionId, answer);
+  // JSON.stringify yields a single line, so the SSE `data:` frame stays intact
+  // even when the answer contains newlines.
+  const payload = JSON.stringify({ questionId, answer });
+  for (const res of session.sse) {
+    res.write(`event: answer\ndata: ${payload}\n\n`);
+  }
+  // True only if at least one open stream actually received it now.
+  return session.sse.size > 0;
+}
+
 // ── Side-effecting runner (not unit-tested; manual smoke test) ───────────────
 
 function readPackageVersion(): string {
@@ -88,140 +413,6 @@ function readPackageVersion(): string {
   } catch {
     return "0.0.0";
   }
-}
-
-/**
- * Render the submit-mode HTML on an ephemeral local server, open the browser,
- * and resolve when the reviewer either submits a decision (POST /submit) or
- * abandons the review by closing the tab. Same-origin, so no CORS. All
- * human-facing output goes to stderr — stdout is the MCP transport's.
- *
- * Abandonment is detected by liveness, not an arbitrary duration cap: the page
- * heartbeats while it's open (and beacons /cancel on unload). Once the page has
- * connected, a gap longer than `liveGraceMs` with no heartbeat means the tab is
- * gone, so the agent is unblocked with { kind: "abandoned" } rather than hanging
- * forever. An open-but-idle tab keeps heartbeating, so a slow human review is
- * never cut short.
- *
- * Exported for tests, which suppress the browser launch by mocking `open` and
- * shrink the liveness timings.
- */
-export function serveAndBlock(
-  html: string,
-  opts: { liveGraceMs?: number; checkMs?: number } = {},
-): Promise<ReviewResult> {
-  const liveGraceMs = opts.liveGraceMs ?? 12_000;
-  const checkMs = opts.checkMs ?? 3_000;
-  return new Promise<ReviewResult>((resolve, reject) => {
-    let settled = false;
-    let connected = false;
-    let lastSeen = Date.now();
-    let liveness: ReturnType<typeof setInterval> | undefined;
-
-    function finish(result: ReviewResult): void {
-      if (settled) return;
-      settled = true;
-      if (liveness) clearInterval(liveness);
-      server.close();
-      resolve(result);
-    }
-
-    const server = createServer((req, res) => {
-      const method = req.method ?? "GET";
-      const url = req.url ?? "/";
-
-      if (method === "GET" && (url === "/" || url.startsWith("/?"))) {
-        connected = true;
-        lastSeen = Date.now();
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(html);
-        return;
-      }
-
-      // Liveness ping from the open page — proof the tab is still there.
-      if (method === "POST" && url === "/heartbeat") {
-        connected = true;
-        lastSeen = Date.now();
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-
-      // Unload beacon — the reviewer closed the tab without deciding.
-      if (method === "POST" && url === "/cancel") {
-        res.writeHead(204);
-        res.end();
-        finish({ kind: "abandoned" });
-        return;
-      }
-
-      if (method === "POST" && url === "/submit") {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("end", () => {
-          let submission: Submission;
-          try {
-            submission = parseSubmission(Buffer.concat(chunks).toString("utf8"));
-          } catch (err) {
-            res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-            res.end("Invalid submission");
-            process.stderr.write(
-              `review-intent mcp: ignored malformed /submit body: ${(err as Error).message}\n`,
-            );
-            return;
-          }
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(
-            "<!doctype html><meta charset=utf-8><title>Review submitted</title>" +
-              "<body style=\"font:16px/1.5 system-ui,sans-serif;padding:3rem;color:#211f1b\">" +
-              "<p>Review submitted — you can close this tab.</p>",
-          );
-          finish({ kind: "submitted", submission });
-        });
-        // A client that aborts mid-body emits 'error' on the request stream;
-        // without a listener Node would throw in the http callback. Fail the
-        // request but keep the server blocking for a real submit.
-        req.on("error", () => {
-          if (!res.writableEnded) {
-            res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
-            res.end("Bad request");
-          }
-        });
-        return;
-      }
-
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not found");
-    });
-
-    server.on("error", (err) => {
-      if (!settled) {
-        settled = true;
-        if (liveness) clearInterval(liveness);
-        reject(err);
-      }
-    });
-
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as AddressInfo;
-      const reviewUrl = `http://127.0.0.1:${addr.port}/`;
-      process.stderr.write(`Review page: ${reviewUrl}\n`);
-      // Fire-and-forget: a failed browser launch must not abort the review;
-      // the URL is on stderr so the reviewer can open it manually.
-      void open(reviewUrl).catch((err: unknown) => {
-        process.stderr.write(
-          `review-intent mcp: could not open browser (${(err as Error).message}); open ${reviewUrl} manually\n`,
-        );
-      });
-      // Once the page has connected, a heartbeat gap past the grace window means
-      // the tab was closed — unblock the agent instead of waiting forever.
-      liveness = setInterval(() => {
-        if (connected && Date.now() - lastSeen > liveGraceMs) {
-          finish({ kind: "abandoned" });
-        }
-      }, checkMs);
-    });
-  });
 }
 
 /**
@@ -240,7 +431,7 @@ export async function runMcp(_argv: string[]): Promise<void> {
     {
       title: "Review changes",
       description:
-        "Render the branch diff (base...HEAD) as an intent-annotated review page, open it in the reviewer's browser, block until they approve or request changes, and return their decision plus assembled feedback.",
+        "Render the branch diff (base...HEAD) as an intent-annotated review page, open it in the reviewer's browser, block until they approve or request changes, and return their decision plus assembled feedback. If the reviewer asks a question instead of deciding, this returns a question event; answer it with answer_review_question and keep answering until a decision is returned.",
       inputSchema: reviewToolInputShape,
     },
     async (args) => {
@@ -286,20 +477,33 @@ export async function runMcp(_argv: string[]): Promise<void> {
 
       const html = renderHtml(build.model, { submit: true });
       try {
-        const result = await serveAndBlock(html);
-        const text =
-          result.kind === "abandoned"
-            ? "The reviewer closed the review without submitting a decision — no approval was given. Re-offer the review or ask how they'd like to proceed."
-            : formatToolResult(result.submission.decision, result.submission.prompt);
-        return { content: [{ type: "text", text }] };
+        const sessionId = await openReviewSession(html);
+        const event = await waitForEvent(sessionId);
+        return { content: [{ type: "text", text: formatEventResult(event) }] };
       } catch (err) {
         return {
-          content: [
-            { type: "text", text: `Review server error: ${(err as Error).message}` },
-          ],
+          content: [{ type: "text", text: `Review server error: ${(err as Error).message}` }],
           isError: true,
         };
       }
+    },
+  );
+
+  server.registerTool(
+    "answer_review_question",
+    {
+      title: "Answer a review question",
+      description:
+        "Answer a question the reviewer asked during an open review (from a review_changes question event). Pushes your answer to the live review page and blocks until the next event — another question, or the reviewer's final decision. Keep calling this for each question until you receive a submitted or abandoned result.",
+      inputSchema: answerToolInputShape,
+    },
+    async (args) => {
+      const shown = deliverAnswer(args.sessionId, args.questionId, args.answer);
+      const event = await waitForEvent(args.sessionId);
+      const note = shown
+        ? ""
+        : "(Note: no review tab was connected, so your answer was not shown live. It was recorded and will appear if the page reconnects, but the reviewer may have closed the tab.)\n\n";
+      return { content: [{ type: "text", text: note + formatEventResult(event) }] };
     },
   );
 

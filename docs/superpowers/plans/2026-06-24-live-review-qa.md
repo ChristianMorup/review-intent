@@ -945,7 +945,7 @@ git commit -m "feat: wire review_changes events and the answer_review_question t
 
 ### Task 6: Live-Q&A page behavior in the submit-mode client script
 
-All of this lives in `render.ts`'s existing submit-mode script and the shared `collect()` — no new markup function, so non-submit output stays byte-identical and `render.ts` stays pure (it emits a static script string; the browser does the DOM work).
+All of this lives in `render.ts`'s existing submit-mode script and the shared `collect()` — no new markup function, so non-submit output stays **behaviorally identical** (CLI mode gains only the dead `.q-ask`/`.q-answer`/`.q-resolved` CSS rules, which target classes no CLI-mode element ever carries, plus the inert `collect()` guard) and `render.ts` stays pure (it emits a static script string; the browser does the DOM work).
 
 **Files:**
 - Modify: `src/render.ts` (`commentScript`: extend the `${submit ? …}` block ~line 1741-1777; add a resolved-question guard in `collect()` ~line 1660-1681; add CSS for `.q-ask` / `.q-answer` near the `.cbox` styles ~line 1475-1493)

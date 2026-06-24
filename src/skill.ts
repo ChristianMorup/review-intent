@@ -207,24 +207,36 @@ Offer to review — never auto-launch:
 > I've written the review intent to \`.review/intent.json\`. Want me to open the
 > side-by-side review?
 
-How you run the review depends on what's available:
+**Default to the \`review_changes\` MCP tool whenever it is available.** It opens an
+*interactive* review the CLI cannot: the reviewer can ask you questions about a
+hunk mid-review and you answer them live. Only fall back to the CLI when the MCP
+tool is genuinely not present.
 
 - **If the \`review_changes\` tool is available** (the review-intent MCP server is
-  configured), call it. It renders the side-by-side page from the
-  \`.review/intent.json\` you just wrote, opens it in the reviewer's browser, and
-  **blocks until they approve or request changes** — then returns their decision
-  plus any comments and questions straight back to you, so there is no
-  copy-paste. Pass \`cwd\` if you worked in a git worktree (the worktree root) and
-  \`base\` if you forked from something other than main/master. Then act on the
-  result: address requested changes and offer the review again; on approval,
-  you're done. The tool runs the same completeness gate — if intent is
-  incomplete it returns the gaps instead of opening the page, so fill them rather
-  than reaching for \`allowGaps\`.
-- **Otherwise** (no MCP server configured), run \`review-intent\` via Bash from the
-  root of the working tree you made the changes in (the worktree root, if you
-  used one). It diffs the current branch against main and opens the rendered
-  page; the reviewer adds comments and copies the assembled prompt back to you
-  manually.
+  configured), **call it** — do not shell out to the CLI instead. It renders the
+  side-by-side page from the \`.review/intent.json\` you just wrote, opens it in the
+  reviewer's browser, and **blocks until the next review event**. Pass \`cwd\` if you
+  worked in a git worktree (the worktree root) and \`base\` if you forked from
+  something other than main/master. The call returns one of:
+  - a **question** — the reviewer asked about a hunk. Answer it by calling
+    \`answer_review_question\` (with the \`sessionId\` and \`questionId\` from the event);
+    your answer appears live on the still-open page. Then you're blocked again on
+    the next event. **Keep answering until you get a decision** — a question is not
+    the end of the review.
+  - a **decision** (approve / request-changes) plus any comments and questions —
+    act on it: address requested changes and offer the review again; on approval,
+    you're done.
+  - an **abandoned** result — the reviewer closed the tab without deciding; re-offer
+    or ask how they'd like to proceed.
+
+  The tool runs the same completeness gate — if intent is incomplete it returns the
+  gaps instead of opening the page, so fill them rather than reaching for
+  \`allowGaps\`.
+- **Only as a fallback** (no MCP server configured), run \`review-intent\` via Bash
+  from the root of the working tree you made the changes in (the worktree root, if
+  you used one). This renders a **static page with no live Q&A** — the reviewer can
+  only add comments and copy the assembled prompt back to you manually. Prefer the
+  MCP tool above; reach for the CLI only when it is unavailable.
 
 ## Why this exists
 

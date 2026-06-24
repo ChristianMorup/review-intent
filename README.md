@@ -158,6 +158,13 @@ review-intent mcp install      # merges a review-intent entry into ./.mcp.json
 review-intent mcp uninstall    # removes just that entry
 ```
 
+**Recommended setup for agents:** install both the MCP server *and* the
+[authoring skill](#honest-intent-enforced) (`review-intent skill install`). The
+MCP server is what gives you the **interactive** review — the live Q&A above —
+while the skill teaches the agent to author `intent.json` and to **prefer the
+`review_changes` tool over the CLI**. With only the skill (no MCP server), the
+agent falls back to the CLI, which renders a static page with no live Q&A.
+
 `mcp install` writes/merges the project `.mcp.json`, preserving any other servers
 (`--force` overwrites a differing `review-intent` entry). Prefer to wire it by
 hand — or register it at user scope in `~/.claude.json`? It's the same entry:
@@ -210,8 +217,14 @@ intent _honestly_ — real rejected alternatives, stated assumptions, incidental
 changes marked as such — then offer to render the review:
 
 ```sh
-review-intent skill install        # install the authoring skill for your agent (all repos)
+review-intent skill install          # install the authoring skill for your agent (all repos)
+review-intent skill install --force  # overwrite an existing copy — use after upgrading review-intent
+review-intent skill uninstall        # remove it
 ```
+
+After you upgrade `review-intent`, re-run `skill install --force` to refresh the
+installed copy with the new guidance — `install` alone won't overwrite an existing
+skill file.
 
 A fluent rationalization is worse than nothing: it lowers the reviewer's guard while
 adding no signal. The skill pushes for "why I chose this over X," and to admit gaps

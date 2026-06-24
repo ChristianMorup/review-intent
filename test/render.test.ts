@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { renderHtml } from "../src/render.js";
+import { renderHtml, sizeTier, SIZE_TIERS } from "../src/render.js";
 import type { ReviewModel } from "../src/types.js";
+
+const tierWords = (name: string) => SIZE_TIERS.find((t) => t.name === name)!.words;
+const hasOneOf = (html: string, words: string[]) =>
+  words.some((w) => html.includes(`this change set is ${w}`));
 
 const model: ReviewModel = {
   title: "My change",
@@ -602,8 +606,8 @@ describe("renderHtml two-pane shell", () => {
     });
     expect(calm).toContain('class="verdict verdict-ok"');
     expect(calm).toContain("Nothing flags as high-risk");
-    // churn here is 10 + 4 = 14 → small, and the size label is measured, not guessed
-    expect(calm).toContain("small change set");
+    // churn here is 10 + 4 = 14 → small tier; the size word is measured, not guessed
+    expect(hasOneOf(calm, tierWords("small"))).toBe(true);
   });
 
   it("flags a huge change set by measured churn even when nothing else does", () => {
@@ -613,9 +617,10 @@ describe("renderHtml two-pane shell", () => {
       scorecard: { ...model.scorecard, added: 16805, removed: 4304, filesChanged: 243, testFiles: 1 },
     });
     expect(huge).toContain('class="verdict verdict-warn"');
-    expect(huge).toContain("huge change set");
     expect(huge).toContain("21109 changed lines across 243 files");
-    expect(huge).not.toContain("change set is small");
+    // a word from the huge bucket, never "small"
+    expect(tierWords("huge").some((w) => huge.includes(`This change set is ${w}`))).toBe(true);
+    expect(hasOneOf(huge, tierWords("small"))).toBe(false);
   });
 
   it("labels a large-but-not-flagged change set without warning", () => {
@@ -625,7 +630,16 @@ describe("renderHtml two-pane shell", () => {
       scorecard: { ...model.scorecard, added: 600, removed: 200, testFiles: 1 }, // churn 800 → large
     });
     expect(large).toContain('class="verdict verdict-ok"');
-    expect(large).toContain("large change set");
+    expect(hasOneOf(large, tierWords("large"))).toBe(true);
+  });
+
+  it("picks the size word deterministically (stable across renders)", () => {
+    const m = {
+      ...model,
+      complexity: { ...model.complexity, available: false, hotspots: [], maxCcn: 0, worst: null },
+      scorecard: { ...model.scorecard, added: 16805, removed: 4304, filesChanged: 243, testFiles: 1 },
+    };
+    expect(renderHtml(m)).toBe(renderHtml(m));
   });
 
   it("stacks the change map above the risk ledger under Change summary", () => {
@@ -773,5 +787,31 @@ describe("agent review-order override", () => {
     const out = renderHtml({ ...model, reviewOrderOverride: ["ghost/missing.ts"] });
     expect(out).toContain('class="order-note"');
     expect(out).toContain("ghost/missing.ts");
+  });
+});
+
+describe("sizeTier", () => {
+  it("buckets churn by the hard thresholds", () => {
+    expect(sizeTier(0).name).toBe("small");
+    expect(sizeTier(199).name).toBe("small");
+    expect(sizeTier(200).name).toBe("medium");
+    expect(sizeTier(499).name).toBe("medium");
+    expect(sizeTier(500).name).toBe("large");
+    expect(sizeTier(999).name).toBe("large");
+    expect(sizeTier(1000).name).toBe("very large");
+    expect(sizeTier(4999).name).toBe("very large");
+    expect(sizeTier(5000).name).toBe("huge");
+    expect(sizeTier(21109).name).toBe("huge");
+  });
+
+  it("flags only very large and huge tiers", () => {
+    expect(sizeTier(100).flag).toBe(false);
+    expect(sizeTier(800).flag).toBe(false);
+    expect(sizeTier(1500).flag).toBe(true);
+    expect(sizeTier(9000).flag).toBe(true);
+  });
+
+  it("gives every tier five interchangeable size words", () => {
+    for (const t of SIZE_TIERS) expect(t.words).toHaveLength(5);
   });
 });

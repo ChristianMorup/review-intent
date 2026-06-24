@@ -249,16 +249,50 @@ function renderVitals(model: ReviewModel): string {
 </section>`;
 }
 
-/** Hard size buckets by total churn (added + removed lines) — keeps the verdict
- *  honest: a 21k-line diff can never read as "small". `flag` marks a change big
- *  enough to call out on its own (very large or huge), so it surfaces even when
- *  no hotspot or test-gap does. */
-function sizeBucket(churn: number): { label: string; flag: boolean } {
-  if (churn < 200) return { label: "small", flag: false };
-  if (churn < 500) return { label: "medium", flag: false };
-  if (churn < 1000) return { label: "large", flag: false };
-  if (churn < 5000) return { label: "very large", flag: true };
-  return { label: "huge", flag: true };
+/** Hard size tiers by total churn (added + removed lines) — keeps the verdict
+ *  honest: a 21k-line diff can never read as "small". Each tier carries a bucket
+ *  of interchangeable size words (picked deterministically per diff, so it's
+ *  varied but stable and testable). `flag` marks a change big enough to call out
+ *  on its own (very large or huge), surfacing even with no hotspot or test gap. */
+export interface SizeTier {
+  /** Canonical tier name (stable; for tests and thresholds). */
+  name: string;
+  /** Churn strictly below this is in-tier; the last tier is the open top. */
+  max: number;
+  flag: boolean;
+  /** Interchangeable size words — fit "this change set is ___". */
+  words: string[];
+}
+
+export const SIZE_TIERS: SizeTier[] = [
+  { name: "small", max: 200, flag: false, words: ["small", "tidy", "bite-sized", "compact", "modest"] },
+  { name: "medium", max: 500, flag: false, words: ["medium", "moderate", "middling", "fair-sized", "middleweight"] },
+  { name: "large", max: 1000, flag: false, words: ["large", "hefty", "chunky", "beefy", "sizeable"] },
+  { name: "very large", max: 5000, flag: true, words: ["very large", "sprawling", "massive", "enormous", "whopping"] },
+  { name: "huge", max: Infinity, flag: true, words: ["humongous", "gigantic", "ludicrous", "colossal", "monstrous"] },
+];
+
+/** Playful "brace yourself" taglines for the flagged (very large / huge) tiers. */
+const SIZE_TAGLINES = [
+  "Get yourself a cup of coffee for this one.",
+  "Pace yourself — review it in chunks, not one pass.",
+  "Settle in and take it section by section.",
+  "This is not a one-pass review.",
+  "Block out some real time for it.",
+];
+
+/** Pure: the size tier for a churn count. */
+export function sizeTier(churn: number): SizeTier {
+  return SIZE_TIERS.find((t) => churn < t.max) ?? SIZE_TIERS[SIZE_TIERS.length - 1];
+}
+
+/** Tiny deterministic string hash — seeds the size-word/tagline pick so the
+ *  verdict varies across diffs but is stable for a given one (no Math.random,
+ *  keeping render.ts pure and testable). */
+function strHash(s: string): number {
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
 }
 
 /** The verdict line: one measured sentence telling the reviewer where to look,
@@ -273,14 +307,18 @@ function renderVerdict(model: ReviewModel): string {
   const hotFiles = [...new Set(hotspots.map((h) => basename(h.file)))].slice(0, 3);
   // "code changed but tests didn't" — measured, the same signal the badge uses.
   const codeNoTests = s.codeFiles > 0 && s.testFiles === 0;
-  // Hard size buckets by total churn (± lines) — measured, never guessed.
+  // Hard size tiers by total churn (± lines) — measured, never guessed. The size
+  // word + tagline are picked deterministically from the diff (stable per diff).
   const churn = s.added + s.removed;
-  const size = sizeBucket(churn);
+  const tier = sizeTier(churn);
+  const seed = strHash(model.title) + churn + s.filesChanged;
+  const sizeWord = tier.words[seed % tier.words.length];
+  const tagline = SIZE_TAGLINES[(seed * 7 + 3) % SIZE_TAGLINES.length];
 
   const parts: string[] = [];
-  if (size.flag) {
+  if (tier.flag) {
     parts.push(
-      `This is a ${size.label} change set — ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}. Review it in chunks, not one pass.`,
+      `This change set is ${sizeWord} — ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}. ${tagline}`,
     );
   }
   if (hotFiles.length) {
@@ -294,7 +332,7 @@ function renderVerdict(model: ReviewModel): string {
   const flagged = parts.length > 0;
   const msg = flagged
     ? parts.join(" ")
-    : `Nothing flags as high-risk — this is a ${size.label} change set and the intent is covered. Skim in the order on the left.`;
+    : `Nothing flags as high-risk — this change set is ${sizeWord} and the intent is covered. Skim in the order on the left.`;
   return `<div class="verdict ${flagged ? "verdict-warn" : "verdict-ok"}" role="note">
   <span class="verdict-icon" aria-hidden="true">${flagged ? "⚑" : "✓"}</span>
   <div class="verdict-msg">${esc(msg)}</div>

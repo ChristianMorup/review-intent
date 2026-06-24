@@ -263,8 +263,9 @@ function renderVerdict(model: ReviewModel): string {
 </div>`;
 }
 
-/** Change summary band: the one decision chart (change map — reach × churn) and
- *  the claimed risk ledger, side by side. Measured next to claimed, deliberately. */
+/** Change summary band: the one decision chart (change map — reach × churn)
+ *  stacked above the claimed risk ledger, each full-width. Measured above
+ *  claimed, deliberately. */
 function renderChangeSummary(model: ReviewModel): string {
   return `<section class="change-summary">
   <div class="section-eyebrow">Change summary</div>
@@ -1099,13 +1100,13 @@ body {
 .verdict-ok .verdict-icon { color: var(--add); }
 .verdict-msg { font-size: 14.5px; line-height: 1.5; color: var(--ink); }
 
-/* ── Change summary band: change map + risk ledger, side by side ── */
+/* ── Change summary band: change map stacked above the risk ledger, each
+   spanning the full content column (as wide as the test overview) ── */
 .change-summary { margin: 0 0 28px; }
 .cs-grid {
-  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  display: grid; grid-template-columns: 1fr;
   gap: 18px; align-items: start;
 }
-@media (max-width: 900px) { .cs-grid { grid-template-columns: 1fr; } }
 
 /* ── Deeper analysis: the demoted analytics behind one disclosure ── */
 .deeper { margin: 0 0 32px; }

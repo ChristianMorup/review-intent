@@ -574,12 +574,14 @@ describe("renderHtml two-pane shell", () => {
     expect(calm).toContain("Nothing flags as high-risk");
   });
 
-  it("puts the change map and risk ledger side by side under Change summary", () => {
+  it("stacks the change map above the risk ledger under Change summary", () => {
     expect(html).toContain('class="change-summary"');
     expect(html).toContain("Change summary");
     const cs = html.slice(html.indexOf('class="cs-grid"'), html.indexOf('class="deeper"'));
     expect(cs).toContain('class="viz-scatter"');
     expect(cs).toContain("Risk ledger");
+    // Change map (measured) leads; the risk ledger (claimed) follows below it.
+    expect(cs.indexOf('class="viz-scatter"')).toBeLessThan(cs.indexOf("Risk ledger"));
   });
 
   it("renders the rail spine in review-priority order across multiple files", () => {

@@ -102,13 +102,54 @@ resolve — so you close the review loop without ever leaving the page.
 ### Use it as a tool (MCP)
 
 Skip the copy-paste entirely. `review-intent mcp` starts a Model Context Protocol
-stdio server that exposes one tool, `review_changes`. An agent (e.g. Claude Code)
-calls it; the tool renders the branch diff (`base...HEAD`) as a review page, opens it in your browser,
+stdio server. An agent (e.g. Claude Code) calls its `review_changes` tool; the tool
+renders the branch diff (`base...HEAD`) as a review page, opens it in your browser,
 and **blocks until you click _Approve_ or _Request changes_** — then returns your
-decision plus the assembled feedback straight back to the agent. The human stays
-in the loop without ever pasting a prompt. Close the tab without deciding and the
-tool returns a no-decision result (detected by a liveness heartbeat) rather than
-hanging the agent — an open tab can take as long as you need.
+decision plus the assembled feedback straight back to the agent.
+
+While the page is open you can also **ask the agent about a hunk and get its answer
+live, inline**, without ending the review. Type a question, click _Ask the agent
+now_, and the agent replies through a second tool, `answer_review_question`; the
+answer appears under your question and the review stays open until you decide. The
+human stays in the loop without ever pasting a prompt. Close the tab without
+deciding and the tool returns a no-decision result (detected by a liveness
+heartbeat) rather than hanging the agent — an open tab can take as long as you need.
+
+The two tools let the agent drive a single conversation: each call blocks until the
+next thing you do, so it answers your questions as they come and unblocks for good
+only when you decide.
+
+```mermaid
+sequenceDiagram
+    actor You as You (reviewer)
+    participant Page as Review page (browser)
+    participant Server as review-intent (MCP server)
+    participant Agent as Agent (e.g. Claude Code)
+
+    Agent->>Server: review_changes
+    Server->>Page: render diff + intent, open in browser
+    Note over Agent,Server: the call blocks until the next review event
+
+    loop until you decide
+        alt You ask a question
+            You->>Page: write a question on a hunk → "Ask the agent now"
+            Page->>Server: POST /ask
+            Server-->>Agent: returns a "question" event
+            Note over Agent: thinks, then answers
+            Agent->>Server: answer_review_question(answer)
+            Server-->>Page: SSE "answer" → shown inline under the question
+            Note over Agent,Server: answer_review_question now blocks until the next event
+        else You decide
+            You->>Page: click Approve / Request changes
+            Page->>Server: POST /submit
+            Server-->>Agent: returns a "submitted" event (decision + feedback)
+        end
+    end
+```
+
+Answers are recorded per question, so if the page reconnects (a sleep or network
+blip) the agent's reply is replayed onto it rather than lost; if no tab is connected
+when the agent answers, it's told the answer wasn't shown live.
 
 Register it the easy way — from the repo you want reviews in:
 

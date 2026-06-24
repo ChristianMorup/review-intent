@@ -699,3 +699,55 @@ describe("renderHtml submit flag (MCP tool mode)", () => {
     expect(html).not.toContain('class="fb-request"');
   });
 });
+
+describe("agent review-order override", () => {
+  it("uses measured order with no override chrome by default", () => {
+    const out = renderHtml(model);
+    expect(out).toContain("in review order");
+    expect(out).not.toContain('class="file-rank-measured"');
+    expect(out).not.toContain('class="order-note"');
+  });
+
+  it("leads with the author's order and shows each moved file's measured rank", () => {
+    const twoFiles: ReviewModel = {
+      ...model,
+      files: [
+        model.files[0],
+        {
+          path: "src/zzz.ts",
+          status: "added",
+          what: "w",
+          why: "y",
+          unmatchedIntents: [],
+          hunks: [
+            {
+              header: "@@ -0,0 +1,30 @@",
+              newStart: 1,
+              newEnd: 30,
+              intents: [{ anchor: 1, what: "a", why: "b" }],
+              lines: Array.from({ length: 30 }, (_, i) => ({
+                type: "add" as const,
+                content: "x",
+                newNumber: i + 1,
+              })),
+            },
+          ],
+        },
+      ],
+      // Measurement ranks src/a.ts first (complexity hotspot + reach beat raw
+      // churn); the override forces src/zzz.ts to lead, so both files move and
+      // carry a "measured #" badge.
+      reviewOrderOverride: ["src/zzz.ts", "src/a.ts"],
+    };
+    const out = renderHtml(twoFiles);
+    expect(out).toContain("in author-set order");
+    expect(out).toContain('class="file-rank-measured"');
+    expect(out).toContain("measured #");
+  });
+
+  it("surfaces override paths that aren't in the diff", () => {
+    const out = renderHtml({ ...model, reviewOrderOverride: ["ghost/missing.ts"] });
+    expect(out).toContain('class="order-note"');
+    expect(out).toContain("ghost/missing.ts");
+  });
+});

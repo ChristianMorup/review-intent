@@ -111,7 +111,8 @@ why.
           "why": "Why this specific change. REQUIRED. Anchor = a line number in the NEW file." }
       ]
     }
-  ]
+  ],
+  "reviewOrder": ["src/the-crux.ts", "src/supporting.ts", "src/trivial-churn.ts"]
 }
 \`\`\`
 
@@ -181,6 +182,29 @@ sequenceDiagram
 
 Omit a diagram if the change genuinely has no structural or sequential story —
 don't draw a trivial two-box diagram to fill the slot.
+
+### Review order (\`reviewOrder\`, optional)
+
+By default \`review-intent\` orders the files by a **measured** priority (churn,
+reach, complexity, missing intent). That's the un-gameable backbone — but you
+know things measurement can't: which change is the *crux* and which is mechanical.
+Use \`reviewOrder\` to set the sequence you'd want a reviewer to read: an array of
+changed-file paths (as they appear in the diff), most-important first. Listed
+files lead in that order; any file you omit follows by measured rank.
+
+Reach for it when:
+- a small change is the whole point but sits next to a large mechanical one
+  (lead with the small one);
+- the change reads best as a narrative — entry point → callees, or a request
+  flow top to bottom;
+- genuinely trivial/generated files should sink to the bottom (list them last).
+
+The measured rank stays visible beside every file you move, so the reviewer can
+see what you reordered. That means the one thing you must **not** do is use
+\`reviewOrder\` to bury a risky, high-churn, or far-reaching change so the diff
+reads cleanly — the demotion will be plainly visible and it reads as exactly what
+it is. Order for the reviewer's understanding, never to soften scrutiny. Omit the
+field entirely to just use the measured order.
 
 ### Reviewing from a worktree
 

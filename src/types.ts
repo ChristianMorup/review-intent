@@ -68,6 +68,11 @@ export const ArtifactSchema = z.object({
   /** Human-readable descriptions of the test cases covering the change (claimed). */
   tests: z.array(TestCaseSchema).optional().default([]),
   files: z.array(FileIntentSchema).optional().default([]),
+  /** Agent's preferred review order: changed-file paths, most-important first.
+   *  Files listed here lead the review in this order; any unlisted changed file
+   *  follows by measured rank. Measured ranks stay visible so an override that
+   *  sinks a risky file is auditable. Optional — omit to use measured order. */
+  reviewOrder: z.array(z.string()).optional().default([]),
 });
 
 export type HunkIntent = z.infer<typeof HunkIntentSchema>;
@@ -254,4 +259,7 @@ export interface ReviewModel {
   files: AnnotatedFile[];
   /** Intent entries for files that are not present in the diff. */
   filesWithoutChanges: { path: string; why?: string }[];
+  /** Agent's preferred review order (changed-file paths). Empty/absent → use the
+   *  measured order. Applied on top of the measured rank by `reviewOrder()`. */
+  reviewOrderOverride?: string[];
 }

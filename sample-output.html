@@ -510,6 +510,16 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .file > summary.file-head::-webkit-details-marker { display: none; }
 .file-head { flex-wrap: wrap; }
 .file-rank { font: 700 11px/1 var(--mono); color: var(--accent); }
+.file-rank-measured {
+  font: 600 10px/1 var(--mono); color: var(--muted);
+  border: 1px dashed var(--line-2); border-radius: 4px; padding: 2px 5px;
+}
+.order-note {
+  max-width: var(--shellw); margin: 0 0 14px; padding: 9px 13px;
+  border-radius: 8px; background: var(--warn-soft); color: var(--warn);
+  border: 1px solid var(--warn); font-size: 13px;
+}
+.order-note code { font-family: var(--mono); }
 .fbadges { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
 .fbadge {
   font: 600 10px/1.5 var(--mono); border-radius: 4px; padding: 2px 6px;
@@ -1733,12 +1743,14 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 
 <section class="diffs">
   <div class="section-eyebrow">Diffs <span class="section-eyebrow-sub">— in review order</span></div>
+  
   <main>
   <details class="file" id="file-0" open>
   <summary class="file-head">
     <span class="status status-modified">modified</span>
     <code class="path">src/render.ts</code>
     <span class="file-rank" title="review priority">#1</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+200 −40</span><span class="fbadge fbadge-reach" title="repo files importing this one (reach)">→ 2</span><span class="fbadge fbadge-hot" title="measured cyclomatic complexity hotspot">CCN 18</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -2982,6 +2994,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-modified">modified</span>
     <code class="path">src/scorecard.ts</code>
     <span class="file-rank" title="review priority">#2</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+40 −6</span><span class="fbadge fbadge-reach" title="repo files importing this one (reach)">→ 3</span><span class="fbadge fbadge-hot" title="measured cyclomatic complexity hotspot">CCN 21</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -3255,6 +3268,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-modified">modified</span>
     <code class="path">test/render.test.ts</code>
     <span class="file-rank" title="review priority">#3</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+40 −0</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -3498,6 +3512,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-modified">modified</span>
     <code class="path">src/types.ts</code>
     <span class="file-rank" title="review priority">#4</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+30 −4</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -3711,6 +3726,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-modified">modified</span>
     <code class="path">src/match.ts</code>
     <span class="file-rank" title="review priority">#5</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+18 −2</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -3854,6 +3870,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-modified">modified</span>
     <code class="path">package-lock.json</code>
     <span class="file-rank" title="review priority">#6</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+0 −44</span><span class="fbadge fbadge-gap" title="some of this file has no written intent">⚠ intent</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
@@ -4117,6 +4134,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <span class="status status-deleted">deleted</span>
     <code class="path">src/legacy.ts</code>
     <span class="file-rank" title="review priority">#7</span>
+    
     <span class="fbadges"><span class="fbadge fbadge-churn" title="lines added / removed">+0 −0</span></span>
     
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>

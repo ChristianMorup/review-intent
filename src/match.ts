@@ -96,5 +96,6 @@ export function buildReviewModel(
     intentCoverage,
     files,
     filesWithoutChanges,
+    reviewOrderOverride: artifact.reviewOrder,
   };
 }

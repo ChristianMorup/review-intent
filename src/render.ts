@@ -9,7 +9,7 @@ import type {
   Risk,
   TestCase,
 } from "./types.js";
-import { reviewOrder, type RankedFile } from "./review-order.js";
+import { reviewOrder, unmatchedOrderPaths, type RankedFile } from "./review-order.js";
 import { THEMES, themeCss } from "./themes.js";
 import { isCodePath, isTestPath, isNoisePath } from "./scorecard.js";
 
@@ -53,7 +53,12 @@ ${renderChangeSummary(model)}
 ${renderDeeperAnalysis(model)}
 
 <section class="diffs">
-  <div class="section-eyebrow">Diffs <span class="section-eyebrow-sub">— in review order</span></div>
+  <div class="section-eyebrow">Diffs <span class="section-eyebrow-sub">— ${
+    (model.reviewOrderOverride?.length ?? 0) > 0
+      ? "in author-set order · measured ranks shown"
+      : "in review order"
+  }</span></div>
+  ${renderOrderNote(model)}
   <main>
   ${
     ranked.length === 0
@@ -146,6 +151,17 @@ function renderDiffScopeBanner(model: ReviewModel): string {
   return `<div class="diff-scope-banner" role="note">⚠ This review includes ${parts.join(
     " + ",
   )} — not yet committed (relative to HEAD).</div>`;
+}
+
+/** Note shown when the agent's reviewOrder lists paths absent from the diff —
+ *  surfaced, never silently dropped (likely a typo or a stale path). */
+function renderOrderNote(model: ReviewModel): string {
+  const unknown = unmatchedOrderPaths(model);
+  if (unknown.length === 0) return "";
+  const paths = unknown.map((p) => `<code>${esc(p)}</code>`).join(", ");
+  return `<div class="order-note" role="note">⚠ The author-set review order lists ${unknown.length} path${
+    unknown.length === 1 ? "" : "s"
+  } not in this diff (ignored): ${paths}</div>`;
 }
 
 /** Slim sticky bar: persistent wayfinding across the long scroll. The progress
@@ -1064,6 +1080,11 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
     <span class="status status-${file.status}">${file.status}</span>
     <code class="path">${esc(file.path)}</code>
     <span class="file-rank" title="review priority">#${r.rank}</span>
+    ${
+      r.measuredRank !== r.rank
+        ? `<span class="file-rank-measured" title="measured priority — the author set a custom review order; this is where measurement ranked it">measured #${r.measuredRank}</span>`
+        : ""
+    }
     ${fileBadges(r)}
     ${
       file.untracked
@@ -1732,6 +1753,16 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .file > summary.file-head::-webkit-details-marker { display: none; }
 .file-head { flex-wrap: wrap; }
 .file-rank { font: 700 11px/1 var(--mono); color: var(--accent); }
+.file-rank-measured {
+  font: 600 10px/1 var(--mono); color: var(--muted);
+  border: 1px dashed var(--line-2); border-radius: 4px; padding: 2px 5px;
+}
+.order-note {
+  max-width: var(--shellw); margin: 0 0 14px; padding: 9px 13px;
+  border-radius: 8px; background: var(--warn-soft); color: var(--warn);
+  border: 1px solid var(--warn); font-size: 13px;
+}
+.order-note code { font-family: var(--mono); }
 .fbadges { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
 .fbadge {
   font: 600 10px/1.5 var(--mono); border-radius: 4px; padding: 2px 6px;

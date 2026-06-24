@@ -249,6 +249,18 @@ function renderVitals(model: ReviewModel): string {
 </section>`;
 }
 
+/** Hard size buckets by total churn (added + removed lines) — keeps the verdict
+ *  honest: a 21k-line diff can never read as "small". `flag` marks a change big
+ *  enough to call out on its own (very large or huge), so it surfaces even when
+ *  no hotspot or test-gap does. */
+function sizeBucket(churn: number): { label: string; flag: boolean } {
+  if (churn < 200) return { label: "small", flag: false };
+  if (churn < 500) return { label: "medium", flag: false };
+  if (churn < 1000) return { label: "large", flag: false };
+  if (churn < 5000) return { label: "very large", flag: true };
+  return { label: "huge", flag: true };
+}
+
 /** The verdict line: one measured sentence telling the reviewer where to look,
  *  derived from the same hotspot + test-gap signals the scorecard computes. The
  *  tone box turns red when something is flagged, green when nothing stands out.
@@ -261,8 +273,16 @@ function renderVerdict(model: ReviewModel): string {
   const hotFiles = [...new Set(hotspots.map((h) => basename(h.file)))].slice(0, 3);
   // "code changed but tests didn't" — measured, the same signal the badge uses.
   const codeNoTests = s.codeFiles > 0 && s.testFiles === 0;
+  // Hard size buckets by total churn (± lines) — measured, never guessed.
+  const churn = s.added + s.removed;
+  const size = sizeBucket(churn);
 
   const parts: string[] = [];
+  if (size.flag) {
+    parts.push(
+      `This is a ${size.label} change set — ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}. Review it in chunks, not one pass.`,
+    );
+  }
   if (hotFiles.length) {
     parts.push(
       `${hotspots.length} complexity hotspot${plural(hotspots.length)} (${hotFiles.join(", ")}) ${hotspots.length === 1 ? "carries" : "carry"} the most risk — start there.`,
@@ -274,7 +294,7 @@ function renderVerdict(model: ReviewModel): string {
   const flagged = parts.length > 0;
   const msg = flagged
     ? parts.join(" ")
-    : `Nothing flags as high-risk — the change set is small and the intent is covered. Skim in the order on the left.`;
+    : `Nothing flags as high-risk — this is a ${size.label} change set and the intent is covered. Skim in the order on the left.`;
   return `<div class="verdict ${flagged ? "verdict-warn" : "verdict-ok"}" role="note">
   <span class="verdict-icon" aria-hidden="true">${flagged ? "⚑" : "✓"}</span>
   <div class="verdict-msg">${esc(msg)}</div>

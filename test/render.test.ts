@@ -602,6 +602,30 @@ describe("renderHtml two-pane shell", () => {
     });
     expect(calm).toContain('class="verdict verdict-ok"');
     expect(calm).toContain("Nothing flags as high-risk");
+    // churn here is 10 + 4 = 14 → small, and the size label is measured, not guessed
+    expect(calm).toContain("small change set");
+  });
+
+  it("flags a huge change set by measured churn even when nothing else does", () => {
+    const huge = renderHtml({
+      ...model,
+      complexity: { ...model.complexity, available: false, hotspots: [], maxCcn: 0, worst: null },
+      scorecard: { ...model.scorecard, added: 16805, removed: 4304, filesChanged: 243, testFiles: 1 },
+    });
+    expect(huge).toContain('class="verdict verdict-warn"');
+    expect(huge).toContain("huge change set");
+    expect(huge).toContain("21109 changed lines across 243 files");
+    expect(huge).not.toContain("change set is small");
+  });
+
+  it("labels a large-but-not-flagged change set without warning", () => {
+    const large = renderHtml({
+      ...model,
+      complexity: { ...model.complexity, available: false, hotspots: [], maxCcn: 0, worst: null },
+      scorecard: { ...model.scorecard, added: 600, removed: 200, testFiles: 1 }, // churn 800 → large
+    });
+    expect(large).toContain('class="verdict verdict-ok"');
+    expect(large).toContain("large change set");
   });
 
   it("stacks the change map above the risk ledger under Change summary", () => {

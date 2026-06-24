@@ -1,5 +1,5 @@
 import { resolveBase, getDiff } from "./git.js";
-import { loadArtifact } from "./artifact.js";
+import { loadArtifact, DEFAULT_ARTIFACT_PATH } from "./artifact.js";
 import { loadConfig } from "./config.js";
 import { parseDiffText } from "./diff-parser.js";
 import { buildScorecard, isCodePath } from "./scorecard.js";
@@ -7,7 +7,38 @@ import { scanRepo, buildReachGraph } from "./reach.js";
 import { analyzeComplexity } from "./complexity.js";
 import { buildReviewModel } from "./match.js";
 import { findGaps } from "./completeness.js";
-import type { ReviewModel, Gap } from "./types.js";
+import type { ReviewModel, Gap, DiffFile, DiffScope } from "./types.js";
+
+const normPath = (p: string): string => p.replace(/\\/g, "/");
+
+/**
+ * Pure: drop review-intent's own input files from the diff and the scope counts,
+ * so the artifact never reviews itself. Matches the whole `.review/` namespace
+ * (artifact + config) plus the resolved artifact path, in case `--artifact`
+ * points outside `.review/`. Recomputes `includesUncommitted` from what survives,
+ * so a tree dirty only with the artifact shows no uncommitted banner.
+ */
+export function stripToolInputs(
+  diff: DiffFile[],
+  scope: DiffScope,
+  artifactPath: string,
+): { diff: DiffFile[]; scope: DiffScope } {
+  const artifactRel = normPath(artifactPath);
+  const isInput = (p: string): boolean => {
+    const n = normPath(p);
+    return n === artifactRel || n.startsWith(".review/");
+  };
+  const uncommittedFiles = scope.uncommittedFiles.filter((p) => !isInput(p));
+  const untrackedFiles = scope.untrackedFiles.filter((p) => !isInput(p));
+  return {
+    diff: diff.filter((f) => !isInput(f.path)),
+    scope: {
+      includesUncommitted: uncommittedFiles.length > 0 || untrackedFiles.length > 0,
+      uncommittedFiles,
+      untrackedFiles,
+    },
+  };
+}
 
 export interface BuildReviewOptions {
   cwd: string;
@@ -37,7 +68,13 @@ export function buildReview(opts: BuildReviewOptions): ReviewBuild {
   const { text: rawDiff, scope: diffScope } = getDiff(opts.cwd, base);
   const artifact = loadArtifact(opts.cwd, opts.artifact);
   const config = loadConfig(opts.cwd);
-  const diff = parseDiffText(rawDiff);
+  // Exclude review-intent's own inputs (the .review/ artifact + config) so the
+  // artifact never shows up in the diff it annotates.
+  const { diff, scope } = stripToolInputs(
+    parseDiffText(rawDiff),
+    diffScope,
+    opts.artifact ?? DEFAULT_ARTIFACT_PATH,
+  );
 
   // Part 1: objective scorecard, computed from the diff.
   const scorecard = buildScorecard(diff, config);
@@ -67,7 +104,7 @@ export function buildReview(opts: BuildReviewOptions): ReviewBuild {
     scorecard,
     reach,
     complexity,
-    diffScope,
+    scope,
   );
   const gaps = findGaps(model);
 

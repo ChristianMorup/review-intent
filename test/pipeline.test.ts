@@ -4,7 +4,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // mock the pipeline-step modules and assert buildReview wires them together,
 // threads `base` + the diff scope through, and surfaces gaps from findGaps(model).
 
-const FAKE_SCOPE = { clean: true };
+const FAKE_SCOPE = {
+  includesUncommitted: true,
+  uncommittedFiles: ["src/a.ts"],
+  untrackedFiles: ["src/new.ts"],
+};
 
 vi.mock("../src/git.js", () => ({
   resolveBase: vi.fn(() => "main"),
@@ -12,6 +16,7 @@ vi.mock("../src/git.js", () => ({
 }));
 vi.mock("../src/artifact.js", () => ({
   loadArtifact: vi.fn(() => ({ artifact: true })),
+  DEFAULT_ARTIFACT_PATH: ".review/intent.json",
 }));
 vi.mock("../src/config.js", () => ({
   loadConfig: vi.fn(() => ({ complexityThreshold: 15 })),
@@ -42,8 +47,9 @@ vi.mock("../src/completeness.js", () => ({
   findGaps: vi.fn(() => FAKE_GAPS),
 }));
 
-import { buildReview } from "../src/pipeline.js";
+import { buildReview, stripToolInputs } from "../src/pipeline.js";
 import { resolveBase, getDiff } from "../src/git.js";
+import { parseDiffText } from "../src/diff-parser.js";
 import { buildReviewModel } from "../src/match.js";
 import { findGaps } from "../src/completeness.js";
 import { scanRepo, buildReachGraph } from "../src/reach.js";
@@ -87,7 +93,25 @@ describe("buildReview", () => {
     const call = (buildReviewModel as ReturnType<typeof vi.fn>).mock.calls[0];
     // signature: (artifact, diff, base, scorecard, reach, complexity, diffScope)
     expect(call[2]).toBe("main");
-    expect(call[6]).toBe(FAKE_SCOPE);
+    // Scope is threaded through stripToolInputs; with no .review inputs present it
+    // is content-equal to the original (a new object, so toEqual not toBe).
+    expect(call[6]).toEqual(FAKE_SCOPE);
+  });
+
+  it("strips review-intent's own inputs (.review/) from the diff and scope", () => {
+    (parseDiffText as ReturnType<typeof vi.fn>).mockReturnValueOnce([
+      { path: "src/a.ts", status: "modified" },
+      { path: ".review/intent.json", status: "added" },
+    ]);
+    (getDiff as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      text: "RAW_DIFF_TEXT",
+      scope: { includesUncommitted: true, uncommittedFiles: [], untrackedFiles: [".review/intent.json"] },
+    });
+    buildReview({ cwd: "/repo" });
+    const call = (buildReviewModel as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(call[1].map((f: { path: string }) => f.path)).toEqual(["src/a.ts"]);
+    expect(call[6].untrackedFiles).toEqual([]);
+    expect(call[6].includesUncommitted).toBe(false);
   });
 
   it("derives changedCodePaths (non-deleted code files) for reach + complexity", () => {
@@ -99,5 +123,59 @@ describe("buildReview", () => {
       { scanTruncated: false },
     );
     expect(analyzeComplexity).toHaveBeenCalledWith("/repo", ["src/a.ts"], 15);
+  });
+});
+
+describe("stripToolInputs", () => {
+  const diff = [
+    { path: "src/a.ts", status: "modified" },
+    { path: ".review/intent.json", status: "added" },
+    { path: ".review/config.json", status: "modified" },
+  ] as never;
+  const scope = {
+    includesUncommitted: true,
+    uncommittedFiles: ["src/a.ts", ".review/config.json"],
+    untrackedFiles: [".review/intent.json"],
+  };
+
+  it("drops the artifact, config, and anything under .review/ from the diff", () => {
+    const out = stripToolInputs(diff, scope, ".review/intent.json");
+    expect(out.diff.map((f) => f.path)).toEqual(["src/a.ts"]);
+  });
+
+  it("drops review inputs from the scope counts, keeping real changes", () => {
+    const out = stripToolInputs(diff, scope, ".review/intent.json");
+    expect(out.scope.uncommittedFiles).toEqual(["src/a.ts"]);
+    expect(out.scope.untrackedFiles).toEqual([]);
+    expect(out.scope.includesUncommitted).toBe(true); // src/a.ts still dirty
+  });
+
+  it("clears includesUncommitted when only the artifact was dirty", () => {
+    const out = stripToolInputs(
+      [{ path: ".review/intent.json", status: "added" }] as never,
+      { includesUncommitted: true, uncommittedFiles: [], untrackedFiles: [".review/intent.json"] },
+      ".review/intent.json",
+    );
+    expect(out.diff).toEqual([]);
+    expect(out.scope.includesUncommitted).toBe(false);
+  });
+
+  it("matches a custom --artifact path outside .review/", () => {
+    const out = stripToolInputs(
+      [{ path: "docs/intent.json", status: "added" }, { path: "src/a.ts", status: "modified" }] as never,
+      { includesUncommitted: true, uncommittedFiles: [], untrackedFiles: ["docs/intent.json"] },
+      "docs/intent.json",
+    );
+    expect(out.diff.map((f) => f.path)).toEqual(["src/a.ts"]);
+    expect(out.scope.untrackedFiles).toEqual([]);
+  });
+
+  it("normalizes backslash paths (windows)", () => {
+    const out = stripToolInputs(
+      [{ path: ".review\\intent.json", status: "added" }] as never,
+      { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] },
+      ".review/intent.json",
+    );
+    expect(out.diff).toEqual([]);
   });
 });

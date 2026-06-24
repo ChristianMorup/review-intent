@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reviewOrder, collectSignals, fileSlug } from "../src/review-order.js";
+import { reviewOrder, collectSignals, fileSlug, unmatchedOrderPaths } from "../src/review-order.js";
 import type { ReviewModel } from "../src/types.js";
 
 // Minimal model factory: two code files + one lockfile, varying churn/reach/intent.
@@ -102,5 +102,50 @@ describe("reviewOrder", () => {
     const a = reviewOrder(makeModel()).map((r) => r.path);
     const b = reviewOrder(makeModel()).map((r) => r.path);
     expect(a).toEqual(b);
+  });
+
+  it("mirrors measuredRank into rank when no override is given", () => {
+    for (const r of reviewOrder(makeModel())) expect(r.measuredRank).toBe(r.rank);
+  });
+});
+
+describe("reviewOrder with an agent override", () => {
+  it("leads with the agent's listed files, then measured order for the rest", () => {
+    const measured = reviewOrder(makeModel());
+    const restMeasured = measured
+      .filter((r) => r.path !== "package-lock.json")
+      .map((r) => r.path);
+    const ranked = reviewOrder({ ...makeModel(), reviewOrderOverride: ["package-lock.json"] });
+    expect(ranked[0].path).toBe("package-lock.json");
+    expect(ranked.slice(1).map((r) => r.path)).toEqual(restMeasured);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3]);
+  });
+
+  it("preserves each file's measured rank so the override is auditable", () => {
+    const measuredRank = new Map(reviewOrder(makeModel()).map((r) => [r.path, r.rank]));
+    const ranked = reviewOrder({ ...makeModel(), reviewOrderOverride: ["package-lock.json", "src/big.ts"] });
+    for (const r of ranked) expect(r.measuredRank).toBe(measuredRank.get(r.path));
+    // the demoted-by-measurement lockfile now leads, but still shows measured #3
+    expect(ranked[0].path).toBe("package-lock.json");
+    expect(ranked[0].measuredRank).toBe(3);
+    expect(ranked[0].rank).toBe(1);
+  });
+
+  it("ignores override entries that match no changed file", () => {
+    const ranked = reviewOrder({ ...makeModel(), reviewOrderOverride: ["does/not/exist.ts", "src/hot.ts"] });
+    expect(ranked).toHaveLength(3);
+    expect(ranked[0].path).toBe("src/hot.ts");
+  });
+});
+
+describe("unmatchedOrderPaths", () => {
+  it("flags override paths that aren't in the diff", () => {
+    expect(unmatchedOrderPaths({ ...makeModel(), reviewOrderOverride: ["nope.ts", "src/hot.ts"] })).toEqual([
+      "nope.ts",
+    ]);
+  });
+
+  it("is empty when there is no override", () => {
+    expect(unmatchedOrderPaths(makeModel())).toEqual([]);
   });
 });

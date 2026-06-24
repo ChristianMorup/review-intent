@@ -83,3 +83,13 @@ describe("uninstallSkill", () => {
     expect(existsSync(file)).toBe(true);
   });
 });
+
+describe("SKILL_CONTENT worktree guidance", () => {
+  it("explains reviewing from a worktree", () => {
+    expect(SKILL_CONTENT).toContain("Reviewing from a worktree");
+  });
+  it("says uncommitted and untracked work is folded in automatically", () => {
+    expect(SKILL_CONTENT.toLowerCase()).toContain("untracked");
+    expect(SKILL_CONTENT).toMatch(/don't need to commit|no need to commit|folded in/i);
+  });
+});

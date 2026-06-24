@@ -3,18 +3,22 @@ import type {
   AnnotatedFile,
   AnnotatedHunk,
   DiffLine,
-  ReachModel,
   IntentCoverage,
   ComplexityModel,
+  ReachModel,
   Risk,
   TestCase,
 } from "./types.js";
-import { isTestPath, isCodePath, isNoisePath } from "./scorecard.js";
-import { reviewOrder, type RankedFile } from "./review-order.js";
+import { reviewOrder, unmatchedOrderPaths, type RankedFile } from "./review-order.js";
 import { THEMES, themeCss } from "./themes.js";
+import { isCodePath, isTestPath, isNoisePath } from "./scorecard.js";
 
-/** Pure: produce a self-contained HTML document from the review model. */
-export function renderHtml(model: ReviewModel): string {
+/** Pure: produce a self-contained HTML document from the review model.
+ *  With `opts.submit` the page gains an Approve / Request-changes bar that POSTs
+ *  the assembled prompt to a same-origin `/submit` endpoint (used by the MCP
+ *  tool). With submit off (the default) the output is byte-identical to before. */
+export function renderHtml(model: ReviewModel, opts?: { submit?: boolean }): string {
+  const submit = opts?.submit === true;
   const ranked = reviewOrder(model);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -22,11 +26,18 @@ export function renderHtml(model: ReviewModel): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${esc(model.title)} — intent review</title>
-<style>${CSS}</style>
+<style>${CSS}</style>${submit ? `<style>.fb-submit{display:flex;gap:12px;align-items:center;margin-top:14px}.fb-approve{font:600 12px/1 var(--mono);cursor:pointer;color:var(--on-accent);background:var(--add);border:1px solid var(--add);border-radius:8px;padding:9px 16px}.fb-request{font:600 12px/1 var(--mono);cursor:pointer;color:var(--ink);background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:9px 16px}.fb-sent{color:var(--muted);font:600 12px/1 var(--mono)}</style>` : ""}
 </head>
 <body>
 ${themeScript()}
 ${renderTopbar(model)}
+${renderDiffScopeBanner(model)}
+
+<div class="shell">
+<aside class="rail" aria-label="Changed files">
+${renderFileSpine(ranked)}
+</aside>
+<div class="main-col">
 <header class="page-head" id="top">
   <div class="eyebrow">Intent review <span class="eyebrow-diff">${esc(model.base)}…HEAD</span></div>
   <h1>${esc(model.title)}</h1>
@@ -36,34 +47,29 @@ ${renderTopbar(model)}
     <div class="overall">${md(model.overall)}</div>
   </details>
 </header>
+${renderVerdict(model)}
+${renderVitals(model)}
+${renderChangeSummary(model)}
+${renderDeeperAnalysis(model)}
 
-<div class="layout">
-<aside class="rail" id="rail" aria-label="Pinned blocks"></aside>
-<div class="content">
-${movable("vitals", renderVitals(model))}
-
-${movable("review-first", renderReviewFirst(ranked))}
-
-${movable("file-index", renderFileIndex(ranked))}
-
-${movable("blast", renderBlastRadius(model))}
-
-${movable("visuals", renderVisuals(model))}
-
-${movable("tests", renderTests(model.tests))}
-
-${movable("diagrams", renderDiagrams(model))}
-
-<main>
+<section class="diffs">
+  <div class="section-eyebrow">Diffs <span class="section-eyebrow-sub">— ${
+    (model.reviewOrderOverride?.length ?? 0) > 0
+      ? "in author-set order · measured ranks shown"
+      : "in review order"
+  }</span></div>
+  ${renderOrderNote(model)}
+  <main>
   ${
     ranked.length === 0
       ? `<p class="empty">No file changes in this diff.</p>`
       : ranked.map((r) => renderFile(model.files[r.index], r)).join("\n")
   }
-</main>
+  </main>
+</section>
 
 ${renderFilesWithoutChanges(model)}
-${renderFeedbackPanel(model)}
+${renderFeedbackPanel(model, submit)}
 </div>
 </div>
 
@@ -73,89 +79,10 @@ ${TOUR}
 ${MERMAID_SCRIPT}
 ${LIGHTBOX_SCRIPT}
 ${viewedScript(model)}
-${pinScript(model)}
-${commentScript(model)}
+${commentScript(model, submit)}
 ${tourScript(model, ranked)}
 </body>
 </html>`;
-}
-
-/** Wrap a movable top-level block with a pin control so the reader can move it
- *  into the sticky rail on wide screens. Empty sections (e.g. an unwritten
- *  Tests block) stay empty — no stray wrapper, no orphan pin button. */
-function movable(key: string, html: string): string {
-  if (!html) return "";
-  return `<div class="movable" data-movable="${key}">${pinButton()}${html}</div>`;
-}
-
-function pinButton(): string {
-  return `<button class="pin-btn" type="button" aria-pressed="false" aria-label="Pin to sidebar" title="Pin to sidebar">📌</button>`;
-}
-
-/** Static, dependency-free enhancement: move pinned blocks into the sticky rail
- *  on wide screens and remember the choice (per-change, like the viewed state).
- *  Default is the file index alone — the "bare minimum" spine. Below the wide
- *  breakpoint every block returns to its original place, so narrow layouts are
- *  untouched. Each block keeps a comment anchor marking its home slot so it can
- *  always be restored in the original order. */
-function pinScript(model: ReviewModel): string {
-  const KEY = `review-intent:pinned:${model.title}@${model.base}`;
-  return `<script>
-  (function () {
-    var rail = document.getElementById("rail");
-    if (!rail) return;
-    var KEY = ${JSON.stringify(KEY).replace(/<\//g, "<\\/")};
-    // Declaration order — the rail stacks pinned blocks in this order regardless
-    // of the order the reader pinned them, so the rail stays predictable.
-    var ORDER = ["vitals", "review-first", "file-index", "blast", "visuals", "tests", "diagrams"];
-    var wide = window.matchMedia("(min-width: 1920px)");
-    var nodes = {}, anchors = {};
-    document.querySelectorAll(".movable").forEach(function (el) {
-      var k = el.getAttribute("data-movable");
-      nodes[k] = el;
-      var a = document.createComment("m:" + k);
-      el.parentNode.insertBefore(a, el);
-      anchors[k] = a;
-    });
-    var pinned;
-    try { pinned = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
-    if (!Array.isArray(pinned)) pinned = ["file-index"];
-    pinned = pinned.filter(function (k) { return nodes[k]; });
-    function apply() {
-      var isWide = wide.matches;
-      ORDER.forEach(function (k) {
-        var el = nodes[k];
-        if (!el) return;
-        var on = pinned.indexOf(k) !== -1;
-        var btn = el.querySelector(".pin-btn");
-        if (btn) {
-          btn.setAttribute("aria-pressed", on ? "true" : "false");
-          btn.title = on ? "Unpin from sidebar" : "Pin to sidebar";
-          btn.setAttribute("aria-label", btn.title);
-        }
-        if (isWide && on) rail.appendChild(el);
-        else anchors[k].parentNode.insertBefore(el, anchors[k]);
-      });
-      document.body.classList.toggle("has-pins", isWide && pinned.length > 0);
-    }
-    document.querySelectorAll(".pin-btn").forEach(function (btn) {
-      btn.addEventListener("click", function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var el = btn.closest(".movable");
-        if (!el) return;
-        var k = el.getAttribute("data-movable");
-        var i = pinned.indexOf(k);
-        if (i === -1) pinned.push(k); else pinned.splice(i, 1);
-        try { localStorage.setItem(KEY, JSON.stringify(pinned)); } catch (e) {}
-        apply();
-      });
-    });
-    if (wide.addEventListener) wide.addEventListener("change", apply);
-    else if (wide.addListener) wide.addListener(apply);
-    apply();
-  })();
-</script>`;
 }
 
 /** Restore the saved theme before paint (no flash) and wire the cogwheel menu.
@@ -209,6 +136,32 @@ function themeScript(): string {
     });
   })();
 </script>`;
+}
+
+/** Banner shown when the diff includes uncommitted working-tree changes.
+ *  Returns empty string when the diff is clean (pure; no I/O). */
+function renderDiffScopeBanner(model: ReviewModel): string {
+  const s = model.diffScope;
+  if (!s.includesUncommitted) return "";
+  const u = s.uncommittedFiles.length;
+  const t = s.untrackedFiles.length;
+  const parts: string[] = [];
+  if (u) parts.push(`${u} file${u === 1 ? "" : "s"} with uncommitted changes`);
+  if (t) parts.push(`${t} untracked file${t === 1 ? "" : "s"}`);
+  return `<div class="diff-scope-banner" role="note">⚠ This review includes ${parts.join(
+    " + ",
+  )} — not yet committed (relative to HEAD).</div>`;
+}
+
+/** Note shown when the agent's reviewOrder lists paths absent from the diff —
+ *  surfaced, never silently dropped (likely a typo or a stale path). */
+function renderOrderNote(model: ReviewModel): string {
+  const unknown = unmatchedOrderPaths(model);
+  if (unknown.length === 0) return "";
+  const paths = unknown.map((p) => `<code>${esc(p)}</code>`).join(", ");
+  return `<div class="order-note" role="note">⚠ The author-set review order lists ${unknown.length} path${
+    unknown.length === 1 ? "" : "s"
+  } not in this diff (ignored): ${paths}</div>`;
 }
 
 /** Slim sticky bar: persistent wayfinding across the long scroll. The progress
@@ -296,89 +249,208 @@ function renderVitals(model: ReviewModel): string {
 </section>`;
 }
 
-function renderBlastRadius(model: ReviewModel): string {
-  return `<section class="blast">
-  <details class="band" open>
-    <summary class="band-head"><h2>Blast radius</h2></summary>
-    <div class="band-body">
-      <div class="blast-grid">
-        ${renderScorecard(model)}
-        ${renderRisks(model.risks)}
-      </div>
-      ${renderReach(model.reach)}
-    </div>
-  </details>
+/** Hard size tiers by total churn (added + removed lines) — keeps the verdict
+ *  honest: a 21k-line diff can never read as "small". Each tier carries a bucket
+ *  of interchangeable size words (picked deterministically per diff, so it's
+ *  varied but stable and testable). `flag` marks a change big enough to call out
+ *  on its own (very large or huge), surfacing even with no hotspot or test gap. */
+export interface SizeTier {
+  /** Canonical tier name (stable; for tests and thresholds). */
+  name: string;
+  /** Churn strictly below this is in-tier; the last tier is the open top. */
+  max: number;
+  flag: boolean;
+  /** Interchangeable one-liners for this size — one is picked per diff. */
+  quips: string[];
+}
+
+export const SIZE_TIERS: SizeTier[] = [
+  {
+    name: "small",
+    max: 200,
+    flag: false,
+    quips: [
+      "Small and sharp — someone here gets the idea behind small commits.",
+      "A small step for this repo, a giant leap for code review.",
+      "This'll be done before your coffee's cold.",
+      "Short and sweet — no notes.",
+      "One does not simply… oh, you did. Clean little PR.",
+      "Easy like Sunday morning.",
+      "The kind of diff that gets approved on the first pass.",
+    ],
+  },
+  {
+    name: "medium",
+    max: 500,
+    flag: false,
+    quips: [
+      "A reasonable chunk — nothing a focused pass can't handle.",
+      "Goldilocks size: not too big, not too small.",
+      "Medium rare — enough to chew on, easy to swallow.",
+      "A one-coffee review. Grab your mug.",
+      "Not your first rodeo — a normal-sized review.",
+      "A healthy serving. Pace is optional.",
+      "Roll up one sleeve for this one.",
+      "Nothing scary here — just a bit to read.",
+    ],
+  },
+  {
+    name: "large",
+    max: 1000,
+    flag: false,
+    quips: [
+      "Beefy. Settle into your chair for this one.",
+      "Getting chunky — clear a real slot, not a coffee break.",
+      "A sit-down meal, not a snack.",
+      "Buckle up — it's a fair haul.",
+      "This one earns a fresh coffee.",
+      "Large and in charge: give it your full attention.",
+      "Both hands on the wheel for this.",
+      "A solid expedition — pack accordingly.",
+      "Don't review this one half-asleep.",
+      "Stretch first; you'll be reading a while.",
+    ],
+  },
+  {
+    name: "very large",
+    max: 5000,
+    flag: true,
+    quips: [
+      "One cup of coffee is probably not enough for this.",
+      "You better block the next couple of hours in your calendar for this one.",
+      "We're gonna need a bigger coffee.",
+      "Sprawling — cancel your afternoon plans.",
+      "This is a marathon, not a sprint.",
+      "Strap in. This is the long haul.",
+      "This diff has chapters.",
+      "Put on a playlist; you'll be here a while.",
+      "Massive. Maybe split it next time?",
+      "Bring snacks.",
+    ],
+  },
+  {
+    name: "huge",
+    max: Infinity,
+    flag: true,
+    quips: [
+      "One cup of coffee is definitely not enough for this.",
+      "Clear your calendar — and maybe your conscience.",
+      "Humongous. Frodo had a shorter journey.",
+      "We're gonna need a bigger boat.",
+      "I have a bad feeling about this.",
+      "Houston, we have a diff.",
+      "Ludicrous size — Spaceballs would be proud.",
+      "This is the diff that ate Tokyo.",
+      "A full-day quest — pack a lunch.",
+      "You shall not pass… not without a clear afternoon and three coffees.",
+    ],
+  },
+];
+
+/** Pure: the size tier for a churn count. */
+export function sizeTier(churn: number): SizeTier {
+  return SIZE_TIERS.find((t) => churn < t.max) ?? SIZE_TIERS[SIZE_TIERS.length - 1];
+}
+
+/** Tiny deterministic string hash — seeds the size-word/tagline pick so the
+ *  verdict varies across diffs but is stable for a given one (no Math.random,
+ *  keeping render.ts pure and testable). */
+function strHash(s: string): number {
+  let h = 0;
+  for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+/** The verdict line: one measured sentence telling the reviewer where to look,
+ *  derived from the same hotspot + test-gap signals the scorecard computes. The
+ *  tone box turns red when something is flagged, green when nothing stands out.
+ *  Empty on an empty diff — there is nothing to triage. */
+function renderVerdict(model: ReviewModel): string {
+  if (model.files.length === 0) return "";
+  const s = model.scorecard;
+  const cx = model.complexity;
+  const hotspots = cx.available ? cx.hotspots : [];
+  const hotFiles = [...new Set(hotspots.map((h) => basename(h.file)))].slice(0, 3);
+  // "code changed but tests didn't" — measured, the same signal the badge uses.
+  const codeNoTests = s.codeFiles > 0 && s.testFiles === 0;
+  // Hard size tiers by total churn (± lines) — measured, never guessed. The quip
+  // is picked deterministically from the diff (varied across diffs, stable for one).
+  const churn = s.added + s.removed;
+  const tier = sizeTier(churn);
+  const seed = strHash(model.title) + churn + s.filesChanged;
+  const quip = tier.quips[seed % tier.quips.length];
+  // The big tiers (flag) also state the measured count to justify the warn tone.
+  const sizeBit = tier.flag
+    ? `${quip} ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}.`
+    : quip;
+
+  const flagParts: string[] = [];
+  if (hotFiles.length) {
+    flagParts.push(
+      `${hotspots.length} complexity hotspot${plural(hotspots.length)} (${hotFiles.join(", ")}) ${hotspots.length === 1 ? "carries" : "carry"} the most risk — start there.`,
+    );
+  }
+  if (codeNoTests) {
+    flagParts.push(`Code changed but no test files did — confirm the change is covered.`);
+  }
+  const flagged = tier.flag || flagParts.length > 0;
+  const msg = flagged
+    ? [sizeBit, ...flagParts].join(" ")
+    : `Nothing flags as high-risk — ${quip} Skim in the order on the left.`;
+  return `<div class="verdict ${flagged ? "verdict-warn" : "verdict-ok"}" role="note">
+  <span class="verdict-icon" aria-hidden="true">${flagged ? "⚑" : "✓"}</span>
+  <div class="verdict-msg">${esc(msg)}</div>
+</div>`;
+}
+
+/** Change summary band: the one decision chart (change map — reach × churn)
+ *  stacked above the claimed risk ledger, each full-width. Measured above
+ *  claimed, deliberately. */
+function renderChangeSummary(model: ReviewModel): string {
+  return `<section class="change-summary">
+  <div class="section-eyebrow">Change summary</div>
+  <div class="cs-grid">
+    ${renderChangeScatter(model)}
+    ${renderRisks(model.risks)}
+  </div>
 </section>`;
 }
 
-function renderScorecard(model: ReviewModel): string {
+/** The trimmed scorecard: only the measured signals nothing else on the page
+ *  shows. The top-line counts (files, ±lines, hunks, intent %, reach, max CCN)
+ *  now live once in the vitals row, so they are deliberately absent here. */
+function renderScorecardSignals(model: ReviewModel): string {
   const s = model.scorecard;
-  const statusBits = Object.entries(s.byStatus)
-    .map(([k, v]) => `${v} ${esc(k)}`)
-    .join(", ");
+  const cx = model.complexity;
   const badges = s.badges.length
     ? s.badges
         .map((b) => `<span class="badge tone-${b.tone}">${esc(b.label)}</span>`)
         .join("")
     : `<span class="badge tone-ok">no flags</span>`;
 
-  // Derived, measured signals — pure arithmetic over the counts above.
-  const net = s.added - s.removed;
-  const netStr = `net ${net >= 0 ? "+" : "−"}${Math.abs(net)}`;
-  const concentration = s.filesChanged
-    ? (s.hunks / s.filesChanged).toFixed(1)
-    : "0.0";
-  const newFiles = s.byStatus.added ?? 0;
-  const fanIn = model.reach.edges.length;
-  const ic = model.intentCoverage;
-  const diagramNames = [
-    model.diagrams.class ? "class" : null,
-    model.diagrams.sequence ? "sequence" : null,
-  ].filter(Boolean);
+  const plr = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-  // Extra signals; the ones that are themselves smells get a danger tint.
-  const extra: string[] = [
-    `<span>${netStr} lines</span>`,
+  const signals: string[] = [
     `<span>${s.testLines} test / ${s.codeLines} code lines</span>`,
-    `<span>${concentration} hunks/file</span>`,
-    `<span>${plural(newFiles, "new file")}</span>`,
-    `<span>${plural(fanIn, "dependent")} <span class="muted">(reach)</span></span>`,
-    `<span>intent: ${ic.filesCovered}/${ic.filesTotal} files · ${ic.hunksCovered}/${ic.hunksTotal} hunks</span>`,
-    `<span>diagrams: ${diagramNames.length ? diagramNames.join(", ") : "none"}</span>`,
   ];
   if (s.debtMarkers > 0) {
-    extra.push(`<span class="flag">${plural(s.debtMarkers, "debt/debug marker")} added</span>`);
+    signals.push(`<span class="flag">${plr(s.debtMarkers, "debt/debug marker")} added</span>`);
   }
   if (s.noiseFiles > 0) {
-    extra.push(`<span class="flag">${plural(s.noiseFiles, "noise file")}</span>`);
+    signals.push(`<span class="flag">${plr(s.noiseFiles, "noise file")}</span>`);
   }
   if (s.largestFile) {
-    extra.push(
+    signals.push(
       `<span>largest: <code>${esc(s.largestFile.path)}</code> ±${s.largestFile.churn}</span>`,
     );
   }
-  const cx = model.complexity;
-  if (cx.available) {
-    const hs = cx.hotspots.length;
-    extra.push(
-      `<span${hs ? ' class="flag"' : ""}>max CCN ${cx.maxCcn}${hs ? ` · ${plural(hs, "hotspot")} ≥ ${cx.threshold}` : ""}</span>`,
-    );
-  } else {
-    extra.push(`<span class="muted">complexity: ${esc(cx.note ?? "n/a")}</span>`);
+  if (!cx.available) {
+    signals.push(`<span class="muted">complexity: ${esc(cx.note ?? "n/a")}</span>`);
   }
 
   return `<div class="card scorecard">
-  <h3>Surface area <span class="src">measured</span></h3>
-  <div class="metrics">
-    <span><b>${s.filesChanged}</b> files${statusBits ? ` <span class="muted">(${statusBits})</span>` : ""}</span>
-    <span><b>${s.hunks}</b> hunks</span>
-    <span class="add">+${s.added}</span>
-    <span class="del">−${s.removed}</span>
-    <span><b>${s.testFiles}</b> test / <b>${s.codeFiles}</b> code files</span>
-  </div>
-  <div class="metrics metrics-extra">${extra.join("")}</div>
+  <h3>Signals <span class="src">measured</span></h3>
+  <div class="metrics metrics-extra">${signals.join("")}</div>
   <div class="badges">${badges}</div>
 </div>`;
 }
@@ -408,98 +480,18 @@ function renderRisks(risks: Risk[]): string {
 </div>`;
 }
 
-function renderReach(reach: ReachModel): string {
-  const note = reach.truncatedNote
-    ? `<div class="reach-note">⚠ ${esc(reach.truncatedNote)}</div>`
-    : "";
-  if (reach.changed.length === 0) {
-    return `<div class="card reach">
-  <h3>Reach <span class="src">measured · heuristic</span></h3>
-  <div class="muted">No code files in this change set to trace.</div>
-</div>`;
-  }
-  if (reach.edges.length === 0) {
-    return `<div class="card reach">
-  <h3>Reach <span class="src">measured · heuristic</span></h3>
-  <div class="muted">No file-level dependents found for the changed files (heuristic import scan).</div>
-  ${note}
-</div>`;
-  }
-  return `<div class="card reach zoomable">
-  <h3>Reach <span class="src">measured · heuristic</span></h3>
-  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
-  ${reachRipple(reach)}
-  ${note}
-</div>`;
-}
+// ── Visual summary charts: pure inline-SVG, driven by the measured model ──
 
-/** Inline-SVG radial "ripple": changed files at the centre, importers on an
- *  outer ring, with a connecting line per dependency edge. Pure & deterministic. */
-function reachRipple(reach: ReachModel): string {
-  const W = 720;
-  const H = 420;
-  const cx = W / 2;
-  const cy = H / 2;
-  const cap = 36;
-  const importers = [...new Set(reach.edges.map((e) => e.from))];
-  const shown = importers.slice(0, cap);
-  const hidden = importers.length - shown.length;
+// Light-canvas palette. Semantic fills tuned to read on the warm-paper canvas.
+const C_ADD = "var(--viz-add)";
+const C_ADD_INK = "var(--viz-add-ink)";
+const C_DEL = "var(--viz-del)";
+const C_DEL_INK = "var(--viz-del-ink)";
+const C_WARN = "var(--viz-warn)";
+const C_ACCENT = "var(--viz-accent)";
+const C_LINE = "var(--viz-line)";
 
-  const cpos = new Map<string, { x: number; y: number }>();
-  reach.changed.forEach((c, i) => {
-    if (reach.changed.length === 1) {
-      cpos.set(c, { x: cx, y: cy });
-    } else {
-      const a = (i / reach.changed.length) * 2 * Math.PI - Math.PI / 2;
-      cpos.set(c, { x: cx + 64 * Math.cos(a), y: cy + 64 * Math.sin(a) });
-    }
-  });
-
-  const ipos = new Map<string, { x: number; y: number }>();
-  shown.forEach((f, i) => {
-    const a = (i / shown.length) * 2 * Math.PI - Math.PI / 2;
-    ipos.set(f, { x: cx + 190 * Math.cos(a), y: cy + 150 * Math.sin(a) });
-  });
-
-  const rings = `<circle cx="${cx}" cy="${cy}" r="155" class="ripple-ring" /><circle cx="${cx}" cy="${cy}" r="80" class="ripple-ring" />`;
-  const lines = reach.edges
-    .filter((e) => ipos.has(e.from) && cpos.has(e.to))
-    .map((e) => {
-      const a = ipos.get(e.from)!;
-      const b = cpos.get(e.to)!;
-      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" class="ripple-edge" />`;
-    })
-    .join("");
-  const iNodes = shown.map((f) => rippleNode(ipos.get(f)!, f, false)).join("");
-  const cNodes = reach.changed.map((c) => rippleNode(cpos.get(c)!, c, true)).join("");
-  const more =
-    hidden > 0
-      ? `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="ripple-label">+${hidden} more importer(s) not drawn</text>`
-      : "";
-
-  return `<svg class="viz-ripple" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
-  ${rings}${lines}${iNodes}${cNodes}${more}
-</svg>`;
-}
-
-function rippleNode(
-  p: { x: number; y: number },
-  path: string,
-  isChanged: boolean,
-): string {
-  const r = isChanged ? 8 : 5;
-  const fill = isChanged ? C_ACCENT : "var(--viz-node)";
-  const stroke = isChanged ? "var(--viz-accent-stroke)" : "var(--viz-node-stroke)";
-  const ly = isChanged ? p.y - 13 : p.y + 16;
-  const tip = isChanged ? `${path} — changed file` : `${path} — imports a changed file`;
-  return `<g class="ripple-node">
-  <title>${esc(tip)}</title>
-  <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" />
-  <text x="${p.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="ripple-label">${esc(shortPath(path, 22))}</text>
-</g>`;
-}
-
-// ── Visual summary: five pure inline-SVG charts driven by the measured model ──
+// ── File-level churn stats + the diff-mass and treemap charts ──
 
 type FileCategory = "test" | "code" | "noise" | "other";
 
@@ -512,16 +504,6 @@ interface FileStat {
   hasIntent: boolean;
 }
 
-// Light-canvas palette. Semantic fills (add/del/warn) and a categorical set for
-// the treemap, all tuned to read on the warm-paper background.
-const C_ADD = "var(--viz-add)";
-const C_ADD_INK = "var(--viz-add-ink)";
-const C_DEL = "var(--viz-del)";
-const C_DEL_INK = "var(--viz-del-ink)";
-const C_WARN = "var(--viz-warn)";
-const C_ACCENT = "var(--viz-accent)";
-const C_LINE = "var(--viz-line)";
-
 const CAT_COLOR: Record<FileCategory, string> = {
   test: C_ADD_INK,
   code: C_ACCENT,
@@ -533,6 +515,13 @@ const DIR_PALETTE = [
   "var(--viz-s1)", "var(--viz-s2)", "var(--viz-s3)", "var(--viz-s4)",
   "var(--viz-s5)", "var(--viz-s6)", "var(--viz-s7)", "var(--viz-s8)",
 ];
+
+function dirColor(p: string): string {
+  const dir = p.includes("/") ? p.slice(0, p.indexOf("/")) : "·";
+  let h = 0;
+  for (const ch of dir) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return DIR_PALETTE[h % DIR_PALETTE.length];
+}
 
 function fileStats(model: ReviewModel): FileStat[] {
   return model.files.map((f): FileStat => {
@@ -555,29 +544,7 @@ function fileStats(model: ReviewModel): FileStat[] {
   });
 }
 
-function renderVisuals(model: ReviewModel): string {
-  const stats = fileStats(model).filter((s) => s.churn > 0);
-  const blocks = [
-    renderDiffMass(stats),
-    renderTreemap(stats),
-    renderComplexityHotspots(model.complexity),
-    renderCoverageRings(model.intentCoverage),
-    renderChangeScatter(model),
-  ].filter(Boolean);
-  if (blocks.length === 0) return "";
-  return `<section class="visuals">
-  <details class="band">
-    <summary class="band-head"><h2>Visual summary <span class="src">measured</span></h2></summary>
-    <div class="band-body">
-      <div class="viz-grid">
-        ${blocks.join("\n    ")}
-      </div>
-    </div>
-  </details>
-</section>`;
-}
-
-/** #1 Diff mass — diverging add/remove bars per file, sorted by churn. */
+/** Diff mass — diverging add/remove bars per file, sorted by churn. */
 function renderDiffMass(stats: FileStat[]): string {
   if (stats.length === 0) return "";
   const rows = [...stats].sort((a, b) => b.churn - a.churn);
@@ -628,7 +595,7 @@ function renderDiffMass(stats: FileStat[]): string {
 </div>`;
 }
 
-/** #2 Change treemap — squarified, area ∝ churn, colour = directory. */
+/** Change treemap — squarified, area ∝ churn, colour = directory. */
 function renderTreemap(stats: FileStat[]): string {
   if (stats.length === 0) return "";
   const W = 720;
@@ -728,7 +695,117 @@ function squarify(items: SqItem[], rect: { x: number; y: number; w: number; h: n
   return out;
 }
 
-/** #3 Intent coverage — donut rings for files & hunks annotated. */
+/** Reach ripple — changed files at the centre, importers rippling outward, one
+ *  line per dependency edge. Returns "" when nothing imports the change set, so
+ *  the card drops out of the grid like the other empty charts. */
+function renderReachRipple(reach: ReachModel): string {
+  if (reach.edges.length === 0) return "";
+  const note = reach.truncatedNote
+    ? `<div class="reach-note">⚠ ${esc(reach.truncatedNote)}</div>`
+    : "";
+  return `<div class="card reach zoomable">
+  <h3>Reach <span class="src">measured · heuristic</span></h3>
+  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
+  ${reachRipple(reach)}
+  ${note}
+</div>`;
+}
+
+/** Inline-SVG radial "ripple": changed files at the centre, importers on an
+ *  outer ring, with a connecting line per dependency edge. Pure & deterministic. */
+function reachRipple(reach: ReachModel): string {
+  const W = 720;
+  const H = 420;
+  const cx = W / 2;
+  const cy = H / 2;
+  const cap = 36;
+  const importers = [...new Set(reach.edges.map((e) => e.from))];
+  const shown = importers.slice(0, cap);
+  const hidden = importers.length - shown.length;
+
+  const cpos = new Map<string, { x: number; y: number }>();
+  reach.changed.forEach((c, i) => {
+    if (reach.changed.length === 1) {
+      cpos.set(c, { x: cx, y: cy });
+    } else {
+      const a = (i / reach.changed.length) * 2 * Math.PI - Math.PI / 2;
+      cpos.set(c, { x: cx + 64 * Math.cos(a), y: cy + 64 * Math.sin(a) });
+    }
+  });
+
+  const ipos = new Map<string, { x: number; y: number }>();
+  shown.forEach((f, i) => {
+    const a = (i / shown.length) * 2 * Math.PI - Math.PI / 2;
+    ipos.set(f, { x: cx + 190 * Math.cos(a), y: cy + 150 * Math.sin(a) });
+  });
+
+  const rings = `<circle cx="${cx}" cy="${cy}" r="155" class="ripple-ring" /><circle cx="${cx}" cy="${cy}" r="80" class="ripple-ring" />`;
+  const lines = reach.edges
+    .filter((e) => ipos.has(e.from) && cpos.has(e.to))
+    .map((e) => {
+      const a = ipos.get(e.from)!;
+      const b = cpos.get(e.to)!;
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" class="ripple-edge" />`;
+    })
+    .join("");
+  const iNodes = shown.map((f) => rippleNode(ipos.get(f)!, f, false)).join("");
+  const cNodes = reach.changed.map((c) => rippleNode(cpos.get(c)!, c, true)).join("");
+  const more =
+    hidden > 0
+      ? `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="ripple-label">+${hidden} more importer(s) not drawn</text>`
+      : "";
+
+  return `<svg class="viz-ripple" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
+  ${rings}${lines}${iNodes}${cNodes}${more}
+</svg>`;
+}
+
+function rippleNode(
+  p: { x: number; y: number },
+  path: string,
+  isChanged: boolean,
+): string {
+  const r = isChanged ? 8 : 5;
+  const fill = isChanged ? C_ACCENT : "var(--viz-node)";
+  const stroke = isChanged ? "var(--viz-accent-stroke)" : "var(--viz-node-stroke)";
+  const ly = isChanged ? p.y - 13 : p.y + 16;
+  const tip = isChanged ? `${path} — changed file` : `${path} — imports a changed file`;
+  return `<g class="ripple-node">
+  <title>${esc(tip)}</title>
+  <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" />
+  <text x="${p.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="ripple-label">${esc(shortPath(path, 22))}</text>
+</g>`;
+}
+
+/** Deeper analysis: the demoted analytics, behind one open disclosure so they
+ *  stay available without piling up above the diffs. Architecture (the authored
+ *  diagrams) leads, full-width; coverage / complexity / signals / tests follow
+ *  in a grid. Empty cards drop out, so an analysis-light change collapses to a
+ *  short disclosure rather than a wall of blank panels. */
+function renderDeeperAnalysis(model: ReviewModel): string {
+  const diagrams = renderDiagrams(model);
+  const stats = fileStats(model).filter((s) => s.churn > 0);
+  const grid = [
+    renderDiffMass(stats),
+    renderTreemap(stats),
+    renderReachRipple(model.reach),
+    renderComplexityHotspots(model.complexity),
+    renderCoverageRings(model.intentCoverage),
+    renderScorecardSignals(model),
+  ].filter(Boolean);
+  const tests = renderTests(model.tests);
+  if (!diagrams && grid.length === 0 && !tests) return "";
+  return `<details class="deeper" open>
+  <summary class="deeper-head"><span class="deeper-plus" aria-hidden="true">＋</span> Deeper analysis <span class="deeper-sub">— architecture · coverage · complexity · tests</span></summary>
+  <div class="deeper-body">
+    ${diagrams}
+    ${grid.length ? `<div class="deeper-grid">\n    ${grid.join("\n    ")}\n  </div>` : ""}
+    ${tests}
+  </div>
+</details>`;
+}
+
+/** Intent coverage — donut rings for files & hunks annotated. */
 function renderCoverageRings(ic: IntentCoverage): string {
   if (ic.filesTotal === 0 && ic.hunksTotal === 0) return "";
   return `<div class="card viz zoomable">
@@ -757,8 +834,6 @@ function coverageRing(label: string, unit: string, num: number, den: number): st
   <text x="60" y="135" text-anchor="middle" class="viz-ring-label">${esc(label)} ${num}/${den}</text>
 </svg>`;
 }
-
-/** #4 reach ripple lives with the blast radius (reachRipple above). */
 
 /** Complexity hotspots — horizontal CCN bars for the most complex changed
  *  functions (measured by lizard). Rendered only when analysis ran and found any. */
@@ -959,13 +1034,6 @@ function plural(n: number): string {
   return n === 1 ? "" : "s";
 }
 
-function dirColor(p: string): string {
-  const dir = p.includes("/") ? p.slice(0, p.indexOf("/")) : "·";
-  let h = 0;
-  for (const ch of dir) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return DIR_PALETTE[h % DIR_PALETTE.length];
-}
-
 /** Truncate a path from the left, keeping the tail (most specific part). */
 function shortPath(p: string, max: number): string {
   if (p.length <= max) return p;
@@ -1030,16 +1098,15 @@ function renderTests(tests: TestCase[]): string {
     .join("\n    ");
 
   const n = tests.length;
-  return `<section class="tests">
-  <details class="band">
-    <summary class="band-head"><h2>Tests <span class="src">claimed</span> <span class="muted test-count">${n} case${n === 1 ? "" : "s"} described</span></h2></summary>
-    <div class="band-body">
-      ${blocks}
-    </div>
-  </details>
-</section>`;
+  return `<div class="card tests">
+  <h3>Tests <span class="src">claimed</span> <span class="muted test-count">${n} case${n === 1 ? "" : "s"} described</span></h3>
+  ${blocks}
+</div>`;
 }
 
+/** Architecture diagrams (the authored class + sequence mermaid). A plain
+ *  full-width block — the surrounding "Deeper analysis" disclosure provides the
+ *  collapse, so this no longer wraps itself in a band. */
 function renderDiagrams(model: ReviewModel): string {
   const { class: cls, sequence } = model.diagrams;
   if (!cls && !sequence) return "";
@@ -1050,17 +1117,13 @@ function renderDiagrams(model: ReviewModel): string {
   <pre class="mermaid">${esc(src)}</pre>
 </section>`
       : "";
-  return `<section class="diagrams">
-  <details class="band">
-    <summary class="band-head"><h2>Diagrams</h2></summary>
-    <div class="band-body">
-      <div class="diagram-grid">
+  return `<div class="architecture">
+  <div class="section-subhead">Architecture <span class="src">authored</span></div>
+  <div class="diagram-grid">
 ${block("Class diagram", cls)}
 ${block("Sequence diagram (changed steps highlighted)", sequence)}
-      </div>
-    </div>
-  </details>
-</section>`;
+  </div>
+</div>`;
 }
 
 /** Compact measured signals shown in a file's head — same data the overview
@@ -1078,57 +1141,57 @@ function fileBadges(r: RankedFile): string {
   return `<span class="fbadges">${b.join("")}</span>`;
 }
 
-/** Actionable triage: the up-to-three files most worth a reviewer's first pass,
- *  each with the measured reasons it surfaced. Empty when nothing stands out. */
-function renderReviewFirst(ranked: RankedFile[]): string {
-  const top = ranked.filter((r) => r.score > 0).slice(0, 3);
-  if (top.length === 0) return "";
-  const card = (r: RankedFile) => {
-    const reasons: string[] = [];
-    if (r.churn > 0) reasons.push(`${r.churn} lines`);
-    if (r.fanIn > 0) reasons.push(`imported by ${r.fanIn}`);
-    if (r.hotspot) reasons.push(`CCN ${r.maxCcn}`);
-    if (r.missingIntent) reasons.push(`no intent`);
-    return `<a class="rf-card" href="#${r.slug}">
-      <span class="rf-rank">#${r.rank}</span>
-      <code class="rf-path">${esc(shortPath(r.path, 40))}</code>
-      <span class="rf-reasons">${reasons.map((x) => `<span>${esc(x)}</span>`).join("")}</span>
-    </a>`;
-  };
-  return `<section class="review-first">
-  <h2>Review first</h2>
-  <div class="rf-cards">${top.map(card).join("")}</div>
-</section>`;
-}
-
-/** The spine: every changed file as a clickable row, in review-priority order,
- *  carrying its measured signals. Links jump to the file's detail <details>. */
-function renderFileIndex(ranked: RankedFile[]): string {
-  if (ranked.length === 0) return "";
+/** The merged file rail: the review-first ranking and the file index folded
+ *  into one sticky spine. Each row is a clickable, review-ordered entry carrying
+ *  an inline diff-mass sparkline (the old standalone chart, per-file) plus its
+ *  measured chips. Anchors (`#file-<i>`) and ranked order are preserved so the
+ *  viewed-state highlight and the guided tour keep working. */
+function renderFileSpine(ranked: RankedFile[]): string {
+  if (ranked.length === 0) {
+    return `<div class="spine-head"><span class="spine-title">Files</span></div>
+  <p class="spine-empty">No files changed in this diff.</p>`;
+  }
+  // Sparkline scale: longest single side across all files, each bar capped at
+  // 40px so one big file doesn't blow out the rail. Centre axis at x=42 of 84.
+  const maxSide = Math.max(1, ...ranked.map((r) => Math.max(r.added, r.removed)));
+  const cap = 40;
   const rows = ranked
-    .map(
-      (r) => `<li class="fi-row">
-    <a class="fi-link" href="#${r.slug}">
-      <span class="fi-rank">#${r.rank}</span>
-      <span class="status status-${r.status}">${r.status}</span>
-      <code class="fi-path">${esc(r.path)}</code>
-      <span class="fi-sig">
-        <span class="fi-churn" title="± lines">+${r.added} −${r.removed}</span>
-        ${r.fanIn ? `<span class="fi-reach" title="dependents (reach)">→ ${r.fanIn}</span>` : ""}
-        ${r.hotspot ? `<span class="fi-hot" title="complexity hotspot">CCN ${r.maxCcn}</span>` : ""}
-        ${r.missingIntent ? `<span class="fi-gap" title="unexplained change">⚠</span>` : ""}
-      </span>
-    </a>
-  </li>`,
-    )
+    .map((r) => {
+      const remW = (r.removed / maxSide) * cap;
+      const addW = (r.added / maxSide) * cap;
+      const remX = 42 - remW;
+      const spark = `<svg class="spine-spark" viewBox="0 0 84 10" width="84" height="10" aria-hidden="true">
+        <line x1="42" y1="0" x2="42" y2="10" class="spine-axis" />
+        <rect x="${remX.toFixed(1)}" y="2" width="${remW.toFixed(1)}" height="6" fill="${C_DEL}" fill-opacity=".85" />
+        <rect x="42" y="2" width="${addW.toFixed(1)}" height="6" fill="${C_ADD}" fill-opacity=".85" />
+      </svg>`;
+      const chips =
+        (r.hotspot
+          ? `<span class="spine-chip spine-chip-ccn" title="complexity hotspot — CCN ${r.maxCcn}">CCN</span>`
+          : "") +
+        (r.missingIntent
+          ? `<span class="spine-chip spine-chip-gap" title="some of this file has no written intent">GAP</span>`
+          : "");
+      return `<a class="spine-row" href="#${r.slug}">
+    <span class="spine-rank">${r.rank}</span>
+    <span class="spine-path">${esc(r.path)}</span>
+    <span class="spine-sig">
+      ${spark}
+      <span class="spine-counts">+${r.added} −${r.removed}</span>
+      ${chips}
+    </span>
+  </a>`;
+    })
     .join("\n  ");
   const n = ranked.length;
-  return `<nav class="file-index" aria-label="Changed files">
-  <h2>Files <span class="muted fi-count">${n} changed · review-ordered</span></h2>
-  <ol class="fi-list">
+  return `<div class="spine-head">
+    <span class="spine-title">Files</span>
+    <span class="spine-count">${n} changed</span>
+  </div>
+  <p class="spine-sub">Ranked by reach × churn — top of the list reads first.</p>
+  <nav class="spine" aria-label="Changed files">
   ${rows}
-  </ol>
-</nav>`;
+  </nav>`;
 }
 
 function renderFile(file: AnnotatedFile, r: RankedFile): string {
@@ -1139,7 +1202,19 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
     <span class="status status-${file.status}">${file.status}</span>
     <code class="path">${esc(file.path)}</code>
     <span class="file-rank" title="review priority">#${r.rank}</span>
+    ${
+      r.measuredRank !== r.rank
+        ? `<span class="file-rank-measured" title="measured priority — the author set a custom review order; this is where measurement ranked it">measured #${r.measuredRank}</span>`
+        : ""
+    }
     ${fileBadges(r)}
+    ${
+      file.untracked
+        ? `<span class="fbadge fbadge-uncommitted" title="new file, not yet committed">untracked</span>`
+        : file.uncommitted
+          ? `<span class="fbadge fbadge-uncommitted" title="has uncommitted changes (relative to HEAD)">uncommitted</span>`
+          : ""
+    }
     <label class="viewed-toggle" title="Mark as reviewed"><input type="checkbox" class="viewed-cb" /> seen</label>
   </summary>
   <div class="file-body">
@@ -1148,7 +1223,7 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
       ? `<div class="file-intent">${whatWhy(file.what, file.why)}</div>`
       : `<div class="file-intent missing">⚠ No rationale (what/why) written for this changed file.</div>`
   }
-  ${commentBox(r.slug, file.path, "file")}
+  ${annotateBox(r.slug, file.path, "file")}
   ${file.hunks.map((h, j) => renderHunk(h, r.index, j, file.path)).join("\n")}
   ${
     file.unmatchedIntents.length
@@ -1162,18 +1237,24 @@ function renderFile(file: AnnotatedFile, r: RankedFile): string {
 </details>`;
 }
 
-/** A reviewer comment affordance: a 💬 toggle + a hidden textarea the comment
- *  script persists. Pure markup; the textarea carries the data the assembled
- *  prompt is built from. `cid` is the localStorage key, `ref` the human-readable
- *  location shown in the prompt. */
-function commentBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
+/** A reviewer annotation affordance: a Comment box and an Ask box, side by
+ *  side, each a hidden textarea the script persists. Pure markup; the textareas
+ *  carry the data the assembled prompt is built from. `cid` is the comment's
+ *  localStorage key (the question reuses it with a `q:` prefix); `ref` is the
+ *  human-readable location shown in the prompt. `data-akind` lets the script tell
+ *  comments from questions; `data-ckind` (on the group) tells hunk from file. */
+function annotateBox(cid: string, ref: string, kind: "hunk" | "file", hdr?: string): string {
   const hdrAttr = hdr ? ` data-hdr="${esc(hdr)}"` : "";
-  const ph = kind === "hunk"
-    ? "Note to the agent about this hunk…"
-    : "Note to the agent about this file…";
-  return `<div class="cbox" data-ckind="${kind}">
-    <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">💬</button>
-    <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} placeholder="${ph}"></textarea>
+  const where = kind === "hunk" ? "this hunk" : "this file";
+  return `<div class="cbox-group" data-ckind="${kind}">
+    <div class="cbox" data-akind="comment">
+      <button class="cbtn" type="button" aria-label="Add a comment" title="Add a comment">Comment</button>
+      <textarea class="cinput" data-cid="${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="comment" placeholder="Note to the agent about ${where}…"></textarea>
+    </div>
+    <div class="cbox cbox-q" data-akind="question">
+      <button class="cbtn cbtn-q" type="button" aria-label="Ask a question" title="Ask a question">Ask</button>
+      <textarea class="cinput" data-cid="q:${esc(cid)}" data-ref="${esc(ref)}"${hdrAttr} data-akind="question" placeholder="Question for the agent about ${where}…"></textarea>
+    </div>
   </div>`;
 }
 
@@ -1199,7 +1280,7 @@ function renderHunk(hunk: AnnotatedHunk, fileIndex: number, hunkIndex: number, p
         ? hunk.intents.map((i) => `<div class="note">${whatWhy(i.what, i.why)}</div>`).join("")
         : `<div class="note missing">⚠ No intent for this hunk.</div>`
     }
-    ${commentBox(cid, ref, "hunk", hunk.header)}
+    ${annotateBox(cid, ref, "hunk", hunk.header)}
   </aside>
 </div>`;
 }
@@ -1230,14 +1311,18 @@ function renderFilesWithoutChanges(model: ReviewModel): string {
 /** Gathered review feedback: page-level comment + a live, readonly prompt the
  *  reviewer copies back to the agent. Assembly happens client-side in
  *  commentScript; this is the pure markup shell. */
-function renderFeedbackPanel(model: ReviewModel): string {
+function renderFeedbackPanel(model: ReviewModel, submit = false): string {
   if (model.files.length === 0) return "";
   return `<section class="review-feedback" id="feedback">
   <h2>Review feedback</h2>
-  <p class="rf-hint">Comment on any hunk or file with the 💬 buttons, add overall notes here, then copy the assembled prompt back to the agent.</p>
+  <p class="rf-hint">Comment or ask a question on any hunk or file, add overall notes here, then copy the assembled prompt back to the agent. Questions are listed first — they're the decisions the agent must resolve.</p>
   <label class="fb-general">
     <span class="fb-general-lbl">Overall comment</span>
-    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" placeholder="Overall feedback on the change set…"></textarea>
+    <textarea class="cinput fb-general-input" data-cid="__page__" data-ref="__general__" data-akind="comment" placeholder="Overall feedback on the change set…"></textarea>
+  </label>
+  <label class="fb-general">
+    <span class="fb-general-lbl">Overall question</span>
+    <textarea class="cinput fb-general-input" data-cid="q:__page__" data-ref="__general__" data-akind="question" placeholder="An overall question for the agent…"></textarea>
   </label>
   <div class="fb-summary"></div>
   <h3 class="fb-out-head">Prompt for the agent</h3>
@@ -1245,7 +1330,12 @@ function renderFeedbackPanel(model: ReviewModel): string {
   <div class="fb-actions">
     <button class="fb-copy" type="button">Copy as prompt</button>
     <span class="fb-copied" hidden>Copied ✓</span>
-  </div>
+  </div>${submit ? `
+  <div class="fb-submit">
+    <button class="fb-approve" type="button">Approve</button>
+    <button class="fb-request" type="button">Request changes</button>
+    <span class="fb-sent" hidden>Sent — you can close this tab</span>
+  </div>` : ""}
 </section>`;
 }
 
@@ -1302,6 +1392,8 @@ const CSS = `
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
   --maxw: 1080px;
+  /* Width of the two-pane shell (sticky file rail + main content column). */
+  --shellw: 1500px;
   /* derived (were hard-coded literals; defaults reproduce paper exactly) */
   --add-border: #c7e2cd; --del-border: #eccac4;
   --warn-border: #e6d8a8; --accent-border: #cfdcef;
@@ -1329,21 +1421,44 @@ body {
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 
-/* Every top-level band shares one centred measure with hairline separators. */
-.page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans {
-  max-width: var(--maxw); margin: 0 auto; padding: 36px 40px;
+/* ── Two-pane shell: a permanent file rail beside the main column ── */
+.shell {
+  max-width: var(--shellw); margin: 0 auto;
+  display: grid; grid-template-columns: 312px minmax(0, 1fr); align-items: start;
 }
-.blast, .visuals, .tests, .diagrams, .vitals { border-top: 1px solid var(--line); }
+.rail {
+  position: sticky; top: 43px; align-self: start;
+  max-height: calc(100vh - 43px); overflow: auto;
+  border-right: 1px solid var(--line); padding: 24px 20px 40px;
+}
+.main-col { min-width: 0; padding: 0 44px; }
 
-/* Section eyebrows — small, lettered, quiet. The recurring section-head idiom. */
-.band-head h2 {
-  margin: 0 0 22px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-  display: flex; align-items: baseline; gap: 12px;
+/* Reusable section heads — the small lettered eyebrow and a lighter sub-head. */
+.section-eyebrow {
+  font: 700 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em;
+  color: var(--muted); margin: 0 0 16px;
+}
+.section-eyebrow-sub {
+  font: 400 11px/1 var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted);
+}
+.section-subhead {
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted); margin: 0 0 14px; display: flex; align-items: center; gap: 10px;
+}
+
+/* Below the rail breakpoint the shell collapses to one column and the rail
+   un-sticks to a banded strip at the top. */
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .rail {
+    position: static; max-height: 320px; overflow: auto;
+    border-right: 0; border-bottom: 1px solid var(--line); padding: 20px 22px;
+  }
+  .main-col { padding: 0 22px; }
 }
 
 /* ── Masthead ── */
-.page-head { padding-top: 48px; padding-bottom: 40px; }
+.page-head { max-width: 760px; padding: 44px 0 28px; }
 .eyebrow {
   font: 600 12px/1 var(--mono); letter-spacing: .08em; color: var(--muted);
   text-transform: uppercase; margin-bottom: 18px;
@@ -1373,18 +1488,94 @@ body {
 .overall { color: var(--ink-soft); margin-top: 14px; font-size: 15px; }
 .overall p { margin: 0 0 12px; }
 
-/* ── Vitals: the at-a-glance overview spine ── */
-.vitals {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
-  gap: 1px; background: var(--line); background-clip: content-box;
-  padding-top: 26px; padding-bottom: 26px;
+/* ── File rail · merged spine (priority list + nav in one) ── */
+.spine-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.spine-title {
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
 }
-/* Cells sit on the paper; the 1px grid gap reveals the container's line colour
-   as a hairline between every cell — clean dividers at any column count, no
-   stray edge borders when the grid wraps (the old flex-wrap left those). */
+.spine-count { font: 11px/1 var(--mono); color: var(--muted); }
+.spine-sub { font-size: 11.5px; color: var(--muted); margin: 0 0 16px; line-height: 1.4; }
+.spine-empty { color: var(--muted); font-size: 13px; }
+.spine { display: flex; flex-direction: column; gap: 2px; }
+.spine-row {
+  display: grid; grid-template-columns: 22px 1fr; gap: 3px 10px;
+  padding: 9px; border-radius: 8px; text-decoration: none; color: var(--ink);
+}
+.spine-row:hover { background: var(--surface-2); }
+.spine-row.active { background: var(--accent-soft); }
+.spine-row.viewed { opacity: .5; }
+.spine-row.viewed:hover { opacity: 1; }
+.spine-rank {
+  grid-row: span 2; font: 700 12px/1.4 var(--mono); color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.spine-path { font: 12px/1.35 var(--mono); overflow-wrap: anywhere; }
+.spine-sig { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.spine-spark { flex: none; }
+.spine-axis { stroke: var(--line-2); stroke-width: 1; }
+.spine-counts {
+  font: 10.5px/1 var(--mono); color: var(--muted); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.spine-chip {
+  font: 700 9px/1.4 var(--mono); border-radius: 4px; padding: 1px 4px;
+}
+.spine-chip-ccn { color: var(--del); background: var(--del-soft); border: 1px solid var(--del-border); }
+.spine-chip-gap { color: var(--warn); background: var(--warn-soft); border: 1px solid var(--warn-border); }
+
+/* ── Verdict line: one measured "where to look" sentence ── */
+.verdict {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; border-radius: 10px; max-width: 760px; margin: 0 0 28px;
+  border: 1px solid var(--line-2); background: var(--surface);
+}
+.verdict-warn { background: var(--del-soft); border-color: var(--del-border); }
+.verdict-ok { background: var(--add-soft); border-color: var(--add-border); }
+.verdict-icon { font-size: 15px; line-height: 1.4; flex: none; margin-top: 1px; }
+.verdict-warn .verdict-icon { color: var(--del); }
+.verdict-ok .verdict-icon { color: var(--add); }
+.verdict-msg { font-size: 14.5px; line-height: 1.5; color: var(--ink); }
+
+/* ── Change summary band: change map stacked above the risk ledger, each
+   spanning the full content column (as wide as the test overview) ── */
+.change-summary { margin: 0 0 28px; }
+.cs-grid {
+  display: grid; grid-template-columns: 1fr;
+  gap: 18px; align-items: start;
+}
+
+/* ── Deeper analysis: the demoted analytics behind one disclosure ── */
+.deeper { margin: 0 0 32px; }
+.deeper-head {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px;
+  font: 700 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .14em; color: var(--muted);
+  padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.deeper-head::-webkit-details-marker { display: none; }
+.deeper-plus { color: var(--muted); transition: transform .15s; display: inline-block; }
+.deeper[open] > .deeper-head .deeper-plus { transform: rotate(45deg); }
+.deeper-sub {
+  font: 400 11px/1 var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted);
+}
+.deeper-body { padding-top: 22px; }
+.architecture { margin-bottom: 28px; }
+.deeper-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px; align-items: start;
+}
+
+/* ── Vitals: the single, deduped source of the top-line counts ── */
+.vitals {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  margin: 0 0 32px;
+}
+/* Cells sit on the surface; the 1px grid gap reveals the container's line colour
+   as a hairline between every cell — clean dividers at any column count. */
 .vital {
-  min-width: 0; padding: 6px 22px; background: var(--paper);
-  display: flex; flex-direction: column; gap: 6px;
+  min-width: 0; padding: 14px 18px; background: var(--surface);
+  display: flex; flex-direction: column; gap: 5px;
 }
 .vital-num {
   font: 600 26px/1 var(--mono); letter-spacing: -.01em; color: var(--ink);
@@ -1447,23 +1638,10 @@ body {
 .risk-table tr:last-child td { border-bottom: 0; }
 .risk-table td p, .risks .nudge p { margin: 0; }
 .nudge { color: var(--warn); font-size: 13.5px; background: var(--warn-soft); border-radius: 8px; padding: 12px 14px; }
-.reach { margin-top: 18px; }
-.reach .mermaid { margin-top: 8px; }
-.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
-@media (max-width: 820px) { .blast-grid { grid-template-columns: 1fr; } }
-
-/* ── Visual summary ── */
-.viz-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px; align-items: start;
-}
+/* ── Visual-summary charts (change map · coverage rings · complexity) ── */
 .viz.viz-span { grid-column: auto; }
 .viz svg { width: 100%; height: auto; display: block; }
 .viz-diffmass, .viz-treemap, .viz-complexity, .viz-scatter { max-width: 720px; }
-.viz-ripple { max-width: 720px; margin: 0 auto; }
-/* Thumbnail clamp for the overview grid; lifted inside the lightbox. */
-.zoomable svg { max-height: 168px; }
-.zoomable .mermaid { max-height: 200px; overflow: hidden; }
 .zoomable { cursor: zoom-in; position: relative; transition: border-color .15s, box-shadow .15s; }
 .zoomable:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
 .zoomable::after {
@@ -1477,7 +1655,6 @@ body {
 .viz-label { font-family: var(--mono); font-size: 11px; fill: var(--ink-soft); }
 .viz-num { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
 .viz-axis { stroke: var(--line-2); stroke-width: 1; }
-.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
 .viz-rings { display: flex; gap: 8px; justify-content: space-around; }
 .viz-ring-svg { max-width: 150px; }
 .viz-ring-pct { fill: var(--ink); font-size: 22px; font-weight: 700; font-family: var(--sans); }
@@ -1485,21 +1662,25 @@ body {
 .viz-danger { fill: var(--viz-zone); }
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
+.viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.viz-ripple { max-width: 720px; margin: 0 auto; }
+.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
+.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
+.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
 .viz-dot-hot { fill: var(--del); }
 .viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
 .viz-lg { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-soft); }
 .viz-lg-muted { color: var(--muted); }
 .viz-lg-dot { flex: none; }
-.zoomable .viz-lg-dot { max-height: none; }
 .viz-lg-zone { width: 13px; height: 13px; border-radius: 3px; background: var(--viz-zone); border: 1px solid var(--del-border); }
-.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
-.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
-.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
-@media (max-width: 820px) { .viz-grid { grid-template-columns: 1fr; } }
 
 /* ── Tests (claimed) ── */
 .tests .test-count { font-size: 12px; font-weight: 400; font-family: var(--sans); text-transform: none; letter-spacing: 0; color: var(--muted); }
+.tests h3 { margin-bottom: 16px; }
+/* Tests is its own full-width section under Deeper analysis, below the grid. */
+.deeper-body > .tests { margin-top: 16px; }
 .test-group { margin-bottom: 22px; max-width: 80ch; }
 .test-group:last-child { margin-bottom: 0; }
 .test-kind {
@@ -1526,7 +1707,7 @@ body {
 
 /* ── Diagrams ── */
 .diagram-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 18px; align-items: start;
 }
 .diagram { margin: 0; }
@@ -1537,8 +1718,9 @@ body {
   padding: 16px; overflow: auto;
 }
 
-/* ── File diffs ── */
-main { display: flex; flex-direction: column; gap: 26px; }
+/* ── File diffs — the primary content, now the visual centre ── */
+.diffs { padding-bottom: 80px; }
+main { display: flex; flex-direction: column; gap: 24px; }
 .file {
   border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; background: var(--surface);
@@ -1616,7 +1798,6 @@ code {
 .empty { color: var(--muted); }
 a { color: var(--accent); text-underline-offset: 2px; }
 @media (max-width: 820px) {
-  .page-head, .vitals, .blast, .visuals, .tests, .diagrams, main, .orphans { padding: 28px 22px; }
   .hunk-row { grid-template-columns: 1fr; }
   .hunk-notes { border-left: 0; border-top: 1px dashed var(--line-2); }
 }
@@ -1652,9 +1833,9 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .topbar {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; gap: 16px;
-  /* Align the bar's content with the page measure on wide screens; floor to a
-     small inset on narrow ones. */
-  padding: 9px max(18px, calc((100% - var(--maxw)) / 2 + 40px));
+  /* Align the bar's content with the shell's left gutter (rail inset) on wide
+     screens; floor to a small inset on narrow ones. */
+  padding: 9px max(18px, calc((100% - var(--shellw)) / 2 + 20px));
   background: var(--glass);
   backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
   font: 12px/1 var(--mono);
@@ -1689,65 +1870,21 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 .theme-opt:hover { background: var(--surface-2); color: var(--ink); }
 .theme-opt[aria-checked="true"] { color: var(--accent); font-weight: 600; }
 
-/* ── Review-first callout ── */
-.review-first { max-width: var(--maxw); margin: 0 auto; padding: 22px 40px; border-top: 1px solid var(--line); }
-.review-first > h2 {
-  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-}
-.rf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.rf-card {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 9px;
-  background: var(--surface); text-decoration: none; color: var(--ink);
-  transition: border-color .15s, box-shadow .15s;
-}
-.rf-card:hover { border-color: var(--accent); box-shadow: 0 2px 14px var(--accent-shadow); }
-.rf-rank { font: 700 13px/1 var(--mono); color: var(--accent); }
-.rf-path { font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
-.rf-reasons { display: flex; flex-wrap: wrap; gap: 4px 8px; width: 100%; }
-.rf-reasons span {
-  font: 600 10px/1.5 var(--mono); color: var(--ink-soft);
-  background: var(--surface-2); border-radius: 4px; padding: 2px 6px;
-}
-
-/* ── File index (spine) ── */
-.file-index { max-width: var(--maxw); margin: 0 auto; padding: 28px 40px; border-top: 1px solid var(--line); }
-.file-index > h2 {
-  margin: 0 0 14px; font-size: 12px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .14em;
-}
-.fi-count { font-weight: 400; text-transform: none; letter-spacing: 0; font-family: var(--sans); font-size: 12px; }
-.fi-list { list-style: none; margin: 0; padding: 0; }
-.fi-row { border-bottom: 1px solid var(--line); }
-.fi-row:last-child { border-bottom: 0; }
-.fi-link {
-  display: flex; align-items: center; gap: 12px; padding: 8px 6px;
-  text-decoration: none; color: var(--ink); border-radius: 6px;
-}
-.fi-link:hover { background: var(--surface-2); }
-.fi-link.active { background: var(--accent-soft); }
-.fi-rank { font: 700 12px/1 var(--mono); color: var(--accent); width: 2.4em; flex: none; }
-.fi-path { font-size: 12.5px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; background: none; padding: 0; }
-.fi-sig { display: flex; gap: 4px 10px; flex: none; font: 11px/1.4 var(--mono); color: var(--muted); }
-.fi-sig .fi-hot { color: var(--del); font-weight: 700; }
-.fi-sig .fi-gap { color: var(--warn); font-weight: 700; }
-
-/* ── Collapsible analytics bands ── */
-.band { border: 0; }
-.band-head { cursor: pointer; list-style: none; }
-.band-head::-webkit-details-marker { display: none; }
-.band-head h2::before {
-  content: "›"; font-size: 15px; color: var(--muted); transition: transform .15s; display: inline-block;
-}
-.band[open] > .band-head h2::before { transform: rotate(90deg); }
-.band-body { padding-top: 22px; }
-
 /* ── File head badges + collapsible files + viewed state ── */
 .file > summary.file-head { cursor: pointer; list-style: none; }
 .file > summary.file-head::-webkit-details-marker { display: none; }
 .file-head { flex-wrap: wrap; }
 .file-rank { font: 700 11px/1 var(--mono); color: var(--accent); }
+.file-rank-measured {
+  font: 600 10px/1 var(--mono); color: var(--muted);
+  border: 1px dashed var(--line-2); border-radius: 4px; padding: 2px 5px;
+}
+.order-note {
+  max-width: var(--shellw); margin: 0 0 14px; padding: 9px 13px;
+  border-radius: 8px; background: var(--warn-soft); color: var(--warn);
+  border: 1px solid var(--warn); font-size: 13px;
+}
+.order-note code { font-family: var(--mono); }
 .fbadges { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; }
 .fbadge {
   font: 600 10px/1.5 var(--mono); border-radius: 4px; padding: 2px 6px;
@@ -1755,6 +1892,12 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 .fbadge-hot { color: var(--del); border-color: var(--del-border); background: var(--del-soft); }
 .fbadge-gap { color: var(--warn); border-color: var(--warn-border); background: var(--warn-soft); }
+.fbadge-uncommitted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
+.diff-scope-banner {
+  max-width: var(--shellw); margin: 14px auto 6px; padding: 10px 14px;
+  border-radius: 8px; background: var(--warn-soft); color: var(--warn);
+  border: 1px solid var(--warn); font-size: 14px;
+}
 .viewed-toggle {
   margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
   font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
@@ -1762,11 +1905,6 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
 }
 .file.viewed { opacity: .55; }
 .file.viewed:hover { opacity: 1; }
-
-@media (max-width: 820px) {
-  .review-first, .file-index { padding: 22px; }
-  .fi-sig { width: 100%; }
-}
 
 /* ── Phones ── */
 @media (max-width: 560px) {
@@ -1780,71 +1918,39 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   .lightbox-close { top: 8px; right: 10px; }
 }
 
-/* ── Pin-to-rail: movable blocks + a sticky sidebar on wide screens ── */
-.movable { position: relative; }
-.rail:empty { display: none; }
-/* The pin affordance only exists where there's a rail to pin to (wide screens). */
-.pin-btn { display: none; }
 
-@media (min-width: 1920px) {
-  .pin-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    position: absolute; top: 12px; right: 14px; z-index: 3;
-    font: 12px/1 var(--mono); cursor: pointer;
-    background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px;
-    padding: 4px 6px; opacity: 0; transition: opacity .15s, border-color .15s;
-  }
-  .movable:hover > .pin-btn, .pin-btn:focus-visible { opacity: 1; }
-  .pin-btn[aria-pressed="true"] { opacity: 1; border-color: var(--accent); background: var(--accent-soft); }
-
-  /* The two-pane shell engages only once something is pinned; with an empty
-     rail the page stays the calm centred column it is below this width. */
-  body.has-pins .page-head { max-width: 1840px; }
-  body.has-pins .topbar { padding-inline: max(18px, calc((100% - 1840px) / 2 + 40px)); }
-  body.has-pins .layout {
-    max-width: 1840px; margin: 0 auto; padding: 0 40px;
-    display: grid; grid-template-columns: 320px minmax(0, 1fr);
-    gap: 36px; align-items: start;
-  }
-  body.has-pins .rail {
-    position: sticky; top: 56px; align-self: start;
-    max-height: calc(100vh - 72px); overflow: auto;
-    display: flex; flex-direction: column; gap: 18px;
-  }
-  body.has-pins .content { min-width: 0; }
-  /* Inside the shell, blocks fill their column instead of self-centring. */
-  body.has-pins .content > .movable > section,
-  body.has-pins .content > .movable > nav,
-  body.has-pins .content > main,
-  body.has-pins .content > .orphans,
-  body.has-pins .rail > .movable > section,
-  body.has-pins .rail > .movable > nav { max-width: none; margin: 0; }
-  /* Rail blocks: trim the band padding, drop the band rule, fit narrow charts
-     and let a wide table scroll rather than crush. */
-  body.has-pins .rail > .movable > section,
-  body.has-pins .rail > .movable > nav { padding: 18px 16px; border-top: 0; }
-  body.has-pins .rail .band-body { padding-top: 16px; }
-  body.has-pins .rail .blast-grid { grid-template-columns: 1fr; }
-  body.has-pins .rail .risks { overflow-x: auto; }
-  body.has-pins .rail .viz-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Review comments ── */
-.cbox { margin-top: 10px; }
-.hunk-notes .cbox { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+/* ── Review annotations (comments + questions) ── */
+.cbox-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* File-level Comment/Ask row sits directly in the unpadded .file-body — inset it
+   to align with the .file-intent box above and give the hunk below breathing room. */
+.file-body > .cbox-group { padding: 0 16px 14px; }
+.hunk-notes .cbox-group { margin-top: 12px; border-top: 1px dashed var(--line-2); padding-top: 10px; }
+.cbox { display: inline-flex; }
+.cbox.open { flex-basis: 100%; flex-direction: column; }
 .cbtn {
-  font-size: 12px; line-height: 1; cursor: pointer; color: var(--ink-soft);
-  background: var(--surface); border: 1px solid var(--line-2); border-radius: 6px; padding: 3px 7px;
+  font: 600 12px/1 var(--mono); cursor: pointer; color: var(--ink-soft);
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 11px;
 }
-.cbtn:hover { border-color: var(--accent); }
-.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); }
-.cbox.has-comment .cbtn::after { content: " •"; color: var(--accent); }
+.cbtn:hover { border-color: var(--accent); color: var(--accent); }
+.cbox.has-comment .cbtn { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.cbox.has-comment .cbtn::after { content: " •"; }
+.cbtn-q { color: var(--add); }
+.cbtn-q:hover { border-color: var(--add); color: var(--add); }
+.cbox.has-question .cbtn-q { border-color: var(--add); background: var(--add-soft, var(--accent-soft)); color: var(--add); }
+.cbox.has-question .cbtn-q::after { content: " •"; }
 .cinput {
   display: none; width: 100%; margin-top: 8px; resize: vertical; min-height: 54px;
   font: 13px/1.5 var(--sans); color: var(--ink);
   background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
 }
 .cbox.open .cinput { display: block; }
+.q-ask { display: none; margin-top: 8px; align-self: flex-start; font: inherit; font-size: 0.85em; padding: 3px 10px; border: 1px solid var(--add); border-radius: 6px; background: var(--add-soft, var(--accent-soft)); color: var(--add); cursor: pointer; }
+.cbox.open .q-ask { display: inline-block; }
+.q-ask:disabled { opacity: 0.7; cursor: default; }
+.q-answer { display: none; margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--add); background: var(--accent-soft); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+.cbox.open .q-answer { display: block; }
+.q-answer.pending { opacity: 0.7; font-style: italic; }
+.cbox.q-resolved .cbtn-q::after { content: " ✓"; }
 
 /* ── Review feedback panel ── */
 .review-feedback { max-width: var(--maxw); margin: 0 auto; padding: 36px 40px; border-top: 1px solid var(--line); }
@@ -1940,6 +2046,13 @@ function viewedScript(model: ReviewModel): string {
     try { store = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { store = {}; }
     var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
     var prog = document.querySelector(".tb-progress");
+    // The file rail (spine) links by anchor — reused for both the active-file
+    // highlight and to dim a row once its file is marked reviewed.
+    var links = {};
+    document.querySelectorAll(".rail a[href^='#']").forEach(function (a) {
+      links[a.getAttribute("href").slice(1)] = a;
+    });
+    function dim(id, on) { var a = links[id]; if (a) a.classList.toggle("viewed", on); }
     function update() {
       if (!prog) return;
       var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
@@ -1949,22 +2062,18 @@ function viewedScript(model: ReviewModel): string {
       var cb = f.querySelector(".viewed-cb");
       var toggle = f.querySelector(".viewed-toggle");
       if (!cb) return;
-      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; }
+      if (store[f.id]) { cb.checked = true; f.classList.add("viewed"); f.open = false; dim(f.id, true); }
       // Don't let the control toggle the <details> it lives in.
       if (toggle) toggle.addEventListener("click", function (e) { e.stopPropagation(); });
       cb.addEventListener("change", function () {
-        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; }
-        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; }
+        if (cb.checked) { f.classList.add("viewed"); f.open = false; store[f.id] = 1; dim(f.id, true); }
+        else { f.classList.remove("viewed"); delete store[f.id]; f.open = true; dim(f.id, false); }
         try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
         update();
       });
     });
     update();
 
-    var links = {};
-    document.querySelectorAll(".file-index a[href^='#']").forEach(function (a) {
-      links[a.getAttribute("href").slice(1)] = a;
-    });
     if (window.IntersectionObserver) {
       var io = new IntersectionObserver(function (entries) {
         entries.forEach(function (en) {
@@ -1978,10 +2087,12 @@ function viewedScript(model: ReviewModel): string {
 </script>`;
 }
 
-/** Static enhancement: persist reviewer comments (per-change, like viewed
- *  state), keep the gathered-prompt textarea + summary in sync, and copy. The
- *  prompt is assembled from the live textareas in DOM order (= review order). */
-function commentScript(model: ReviewModel): string {
+/** Static enhancement: persist reviewer annotations (comments + questions,
+ *  per-change like viewed state), keep the gathered-prompt textarea + summary in
+ *  sync, and copy. Questions are emitted first — they're the blocking decisions.
+ *  Each kind is bucketed by the textarea's data-akind; within a kind, items are
+ *  grouped by file then hunk in DOM order (= review order). */
+function commentScript(model: ReviewModel, submit = false): string {
   const KEY = `review-intent:comments:${model.title}@${model.base}`;
   const META = JSON.stringify({ title: model.title, base: model.base }).replace(/<\//g, "<\\/");
   return `<script>
@@ -1996,41 +2107,63 @@ function commentScript(model: ReviewModel): string {
     var out = document.querySelector(".fb-output");
     var summary = document.querySelector(".fb-summary");
     function clean(s) { return s.replace(/\\r/g, "").trim(); }
-    function mark(t) { var b = t.closest(".cbox"); if (b) b.classList.toggle("has-comment", !!clean(t.value)); }
+    function indent(s) { return clean(s).replace(/\\n/g, "\\n  "); }
+    function mark(t) {
+      var b = t.closest(".cbox"); if (!b) return;
+      var cls = t.getAttribute("data-akind") === "question" ? "has-question" : "has-comment";
+      b.classList.toggle(cls, !!clean(t.value));
+    }
     function reveal(t) { var b = t.closest(".cbox"); if (b) b.classList.add("open"); }
 
-    function assemble() {
+    // Gather one kind ("comment" | "question") grouped by file -> hunk, plus its
+    // page-level box. Returns { lines: [...], count: n }.
+    function collect(akind, files) {
       var lines = [], count = 0;
-      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
-      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      function live(el) { var b = el.closest(".cbox"); return !(akind === "question" && b && b.classList.contains("q-resolved")); }
       files.forEach(function (f) {
         var code = f.querySelector(".path");
         var path = code ? code.textContent : f.id;
         var section = [];
-        var fc = f.querySelector('.cbox[data-ckind="file"] .cinput');
-        if (fc && clean(fc.value)) { section.push("- " + clean(fc.value).replace(/\\n/g, "\\n  ")); count++; }
-        f.querySelectorAll('.cbox[data-ckind="hunk"] .cinput').forEach(function (hc) {
-          if (clean(hc.value)) {
+        var fc = f.querySelector('.cbox-group[data-ckind="file"] .cinput[data-akind="' + akind + '"]');
+        if (fc && clean(fc.value) && live(fc)) { section.push("- " + indent(fc.value)); count++; }
+        f.querySelectorAll('.cbox-group[data-ckind="hunk"] .cinput[data-akind="' + akind + '"]').forEach(function (hc) {
+          if (clean(hc.value) && live(hc)) {
             var ref = hc.getAttribute("data-ref"), hdr = hc.getAttribute("data-hdr");
             section.push("### " + ref + (hdr ? "  (" + hdr + ")" : ""));
-            section.push("- " + clean(hc.value).replace(/\\n/g, "\\n  "));
+            section.push("- " + indent(hc.value));
             count++;
           }
         });
         if (section.length) { lines.push("## " + path); lines.push.apply(lines, section); lines.push(""); }
       });
-      var pg = document.querySelector('.cinput[data-cid="__page__"]');
-      if (pg && clean(pg.value)) { lines.push("## General"); lines.push("- " + clean(pg.value).replace(/\\n/g, "\\n  ")); lines.push(""); count++; }
+      var pgCid = akind === "question" ? "q:__page__" : "__page__";
+      var pg = document.querySelector('.cinput[data-cid="' + pgCid + '"]');
+      if (pg && clean(pg.value) && live(pg)) { lines.push("## General"); lines.push("- " + indent(pg.value)); lines.push(""); count++; }
+      return { lines: lines, count: count };
+    }
+
+    function assemble() {
+      var files = Array.prototype.slice.call(document.querySelectorAll("details.file"));
+      var done = files.filter(function (f) { return f.classList.contains("viewed"); }).length;
+      var q = collect("question", files);
+      var c = collect("comment", files);
       if (out) {
-        if (count === 0) { out.value = ""; }
+        if (q.count === 0 && c.count === 0) { out.value = ""; }
         else {
           var head = 'Review feedback on "' + META.title + '" (' + META.base + "...HEAD).\\n" +
-            "Sign-off: " + done + " / " + files.length + " files reviewed. Address each item below.\\n";
-          out.value = head + "\\n" + lines.join("\\n").replace(/\\n+$/, "") + "\\n";
+            "Sign-off: " + done + " / " + files.length + " files reviewed. " +
+            q.count + " question" + (q.count === 1 ? "" : "s") + ", " +
+            c.count + " comment" + (c.count === 1 ? "" : "s") + " below.\\n";
+          var blocks = [];
+          if (q.count) { blocks.push("# Questions (please answer)"); blocks = blocks.concat(q.lines); }
+          if (c.count) { blocks.push("# Comments"); blocks = blocks.concat(c.lines); }
+          out.value = head + "\\n" + blocks.join("\\n").replace(/\\n+$/, "") + "\\n";
         }
       }
       if (summary) {
-        summary.textContent = done + " / " + files.length + " files reviewed · " + count + " comment" + (count === 1 ? "" : "s");
+        summary.textContent = done + " / " + files.length + " files reviewed · " +
+          q.count + " question" + (q.count === 1 ? "" : "s") + " · " +
+          c.count + " comment" + (c.count === 1 ? "" : "s");
       }
     }
 
@@ -2066,7 +2199,90 @@ function commentScript(model: ReviewModel): string {
         } else if (ok) { flash(); }
       });
     }
-
+${submit ? `
+    var approveBtn = document.querySelector(".fb-approve");
+    var requestBtn = document.querySelector(".fb-request");
+    var sent = document.querySelector(".fb-sent");
+    var done = false;
+    // Heartbeat while the page is open so the server can tell a slow review
+    // (tab still open) from an abandoned one (tab closed). Stops once submitted.
+    var beat = setInterval(function () {
+      if (!done) fetch("/heartbeat", { method: "POST" }).catch(function () {});
+    }, 4000);
+    // Fast-path abandonment signal: tell the server immediately on tab close so
+    // it need not wait out the heartbeat grace window.
+    window.addEventListener("pagehide", function () {
+      if (!done && navigator.sendBeacon) navigator.sendBeacon("/cancel");
+    });
+    function send(decision) {
+      assemble();
+      var prompt = out ? out.value : "";
+      if (approveBtn) approveBtn.disabled = true;
+      if (requestBtn) requestBtn.disabled = true;
+      fetch("/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: decision, prompt: prompt })
+      }).then(function () {
+        done = true;
+        clearInterval(beat);
+        if (sent) { sent.textContent = "Sent — you can close this tab"; sent.hidden = false; }
+      }).catch(function () {
+        if (approveBtn) approveBtn.disabled = false;
+        if (requestBtn) requestBtn.disabled = false;
+        if (sent) { sent.textContent = "Submit failed — is the review server still running? Try again."; sent.hidden = false; }
+      });
+    }
+    if (approveBtn) approveBtn.addEventListener("click", function () { send("approve"); });
+    if (requestBtn) requestBtn.addEventListener("click", function () { send("request-changes"); });
+    // ── Live Q&A: ask the agent about a hunk while the review stays open ──
+    var es = null;
+    try { es = new EventSource("/events"); } catch (e) {}
+    function ansSlot(cbox) {
+      var slot = cbox.querySelector(".q-answer");
+      if (!slot) { slot = document.createElement("div"); slot.className = "q-answer"; cbox.appendChild(slot); }
+      return slot;
+    }
+    Array.prototype.slice.call(document.querySelectorAll('.cinput[data-akind="question"]')).forEach(function (ta) {
+      var cbox = ta.closest(".cbox"); if (!cbox) return;
+      var ask = document.createElement("button");
+      ask.type = "button"; ask.className = "q-ask"; ask.textContent = "Submit";
+      ta.insertAdjacentElement("afterend", ask);
+      ask.addEventListener("click", function () {
+        var q = clean(ta.value); if (!q) return;
+        var qid = ta.getAttribute("data-cid");
+        var ref = ta.getAttribute("data-ref") || qid;
+        ask.disabled = true; ask.textContent = "Waiting for the agent…";
+        var slot = ansSlot(cbox); slot.className = "q-answer pending"; slot.textContent = "Waiting for the agent…";
+        fetch("/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ questionId: qid, ref: ref, question: q })
+        }).then(function (r) {
+          if (!r.ok) {
+            ask.disabled = false; ask.textContent = "Submit";
+            slot.className = "q-answer"; slot.textContent = "Server error (" + r.status + ") — the review session may have expired.";
+          }
+        }).catch(function () {
+          ask.disabled = false; ask.textContent = "Submit";
+          slot.className = "q-answer"; slot.textContent = "Could not reach the review server — is it still running?";
+        });
+      });
+    });
+    if (es) es.addEventListener("answer", function (ev) {
+      var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
+      var ta = document.querySelector('.cinput[data-cid="' + data.questionId + '"]');
+      if (!ta) return;
+      var cbox = ta.closest(".cbox"); if (!cbox) return;
+      var slot = ansSlot(cbox); slot.className = "q-answer"; slot.textContent = "";
+      var lbl = document.createElement("strong"); lbl.textContent = "Agent: ";
+      slot.appendChild(lbl); slot.appendChild(document.createTextNode(data.answer));
+      cbox.classList.add("q-resolved");
+      var ask = cbox.querySelector(".q-ask");
+      if (ask) { ask.disabled = true; ask.textContent = "Answered ✓"; }
+      assemble();
+    });
+` : ""}
     assemble();
   })();
 </script>`;

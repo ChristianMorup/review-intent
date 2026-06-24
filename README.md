@@ -42,26 +42,32 @@ review-intent
 
 ### Claimed vs. measured, side by side
 
-Every page opens with a blast-radius block. The **measured** side is computed
-from the diff and is un-gameable: files, hunks, ±lines, intent coverage, cyclomatic
-complexity, a red flag when code changed but tests didn't, and sensitive-path
-badges (`auth`, dependencies, secrets, pipelines, Dockerfiles…). The **claimed**
-side is the author's risk ledger — _assumption → if false → how you'd know_. When
-the two disagree, you see it immediately.
+Every page leads with the **measured** surface area — computed from the diff and
+un-gameable: a vitals strip (files, ±lines, hunks, intent coverage, max cyclomatic
+complexity, downstream dependents) above a one-line **verdict** that names the
+complexity hotspots and flags when code changed but tests didn't, so you know
+where to look before you scroll. The **claimed** side is the author's risk ledger
+— _assumption → if false → how you'd know_ — and it sits right beside the measured
+change map. When the two disagree, you see it immediately.
 
 <p align="center">
-  <img src="docs/media/scorecard.png" alt="Measured surface-area scorecard" width="49%">
+  <img src="docs/media/scorecard.png" alt="Measured surface-area signals" width="49%">
   <img src="docs/media/risk-ledger.png" alt="Claimed risk ledger" width="49%">
 </p>
 
-### A visual summary you can read in five seconds
+### A visual read on where to look
 
-Five hand-rolled SVG charts — diff mass, a change treemap, intent-coverage rings,
-measured complexity hotspots, and a **change map** that plots each file by
-downstream reach × churn, so the review-first files pick themselves out.
+A **change map** plots every changed file by downstream reach × churn, so the
+review-first files pick themselves out — it headlines the change-summary band,
+right next to the risk ledger. Open **Deeper analysis** (expanded by default) for
+the supporting visuals — architecture diagrams, intent-coverage rings, and
+measured complexity hotspots — plus the full measured signal list: test-vs-code
+lines, debt markers, and sensitive-path badges (`auth`, dependencies, secrets,
+pipelines, Dockerfiles…). Every file in the rail carries its own inline diff-mass
+sparkline.
 
 <p align="center">
-  <img src="docs/media/visual-summary.png" alt="Visual summary charts" width="100%">
+  <img src="docs/media/visual-summary.png" alt="Change map and deeper-analysis charts" width="100%">
 </p>
 
 ### Architecture diagrams, authored by the change
@@ -82,15 +88,111 @@ first — so your attention lands where it matters instead of top-to-bottom.
   <img src="docs/media/guided-tour.png" alt="Guided review tour" width="100%">
 </p>
 
-### Comment straight back to the agent
+### Comment and question, straight back to the agent
 
-Leave notes on any hunk or file. They assemble into a single copy-paste prompt
-addressed to the agent that made the change — close the review loop without ever
-leaving the page.
+Leave a **comment** (💬) or raise a **question** (❓) on any hunk or file. Both
+assemble into a single copy-paste prompt addressed to the agent that made the
+change — questions listed first, since they're the decisions the agent must
+resolve — so you close the review loop without ever leaving the page.
 
 <p align="center">
   <img src="docs/media/review-comment.png" alt="Review comments assembled into an agent prompt" width="100%">
 </p>
+
+### Use it as a tool (MCP)
+
+Skip the copy-paste entirely. `review-intent mcp` starts a Model Context Protocol
+stdio server. An agent (e.g. Claude Code) calls its `review_changes` tool; the tool
+renders the branch diff (`base...HEAD`) as a review page, opens it in your browser,
+and **blocks until you click _Approve_ or _Request changes_** — then returns your
+decision plus the assembled feedback straight back to the agent.
+
+While the page is open you can also **ask the agent about a hunk and get its answer
+live, inline**, without ending the review. Type a question, click _Ask the agent
+now_, and the agent replies through a second tool, `answer_review_question`; the
+answer appears under your question and the review stays open until you decide. The
+human stays in the loop without ever pasting a prompt. Close the tab without
+deciding and the tool returns a no-decision result (detected by a liveness
+heartbeat) rather than hanging the agent — an open tab can take as long as you need.
+
+The two tools let the agent drive a single conversation: each call blocks until the
+next thing you do, so it answers your questions as they come and unblocks for good
+only when you decide.
+
+```mermaid
+sequenceDiagram
+    actor You as You (reviewer)
+    participant Page as Review page (browser)
+    participant Server as review-intent (MCP server)
+    participant Agent as Agent (e.g. Claude Code)
+
+    Agent->>Server: review_changes
+    Server->>Page: render diff + intent, open in browser
+    Note over Agent,Server: the call blocks until the next review event
+
+    loop until you decide
+        alt You ask a question
+            You->>Page: write a question on a hunk → "Ask the agent now"
+            Page->>Server: POST /ask
+            Server-->>Agent: returns a "question" event
+            Note over Agent: thinks, then answers
+            Agent->>Server: answer_review_question(answer)
+            Server-->>Page: SSE "answer" → shown inline under the question
+            Note over Agent,Server: answer_review_question now blocks until the next event
+        else You decide
+            You->>Page: click Approve / Request changes
+            Page->>Server: POST /submit
+            Server-->>Agent: returns a "submitted" event (decision + feedback)
+        end
+    end
+```
+
+Answers are recorded per question, so if the page reconnects (a sleep or network
+blip) the agent's reply is replayed onto it rather than lost; if no tab is connected
+when the agent answers, it's told the answer wasn't shown live.
+
+Register it the easy way — from the repo you want reviews in:
+
+```sh
+review-intent mcp install      # merges a review-intent entry into ./.mcp.json
+review-intent mcp uninstall    # removes just that entry
+```
+
+**Recommended setup for agents:** install both the MCP server *and* the
+[authoring skill](#honest-intent-enforced) (`review-intent skill install`). The
+MCP server is what gives you the **interactive** review — the live Q&A above —
+while the skill teaches the agent to author `intent.json` and to **prefer the
+`review_changes` tool over the CLI**. With only the skill (no MCP server), the
+agent falls back to the CLI, which renders a static page with no live Q&A.
+
+`mcp install` writes/merges the project `.mcp.json`, preserving any other servers
+(`--force` overwrites a differing `review-intent` entry). Prefer to wire it by
+hand — or register it at user scope in `~/.claude.json`? It's the same entry:
+
+```json
+{
+  "mcpServers": {
+    "review-intent": {
+      "command": "review-intent",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+No global install? Use `npx`: `"command": "npx", "args": ["-y", "@christianmorup/review-intent", "mcp"]`.
+
+The tool takes optional `cwd`, `base`, `artifact`, and `allowGaps` arguments and
+honors the same completeness gate as the CLI: if intent is incomplete (and
+`allowGaps` is false) it returns the gaps as an error instead of opening the
+browser. The authoring skill (below) knows about this tool and can offer to drive
+the review through it once the intent artifact is written.
+
+The same server also ships the **authoring contract** so the honesty guidance
+travels with the tool, even without the skill installed: as a resource
+(`review-intent://authoring-guide`) the agent can read, and as a prompt
+(`author_intent`, surfaced in Claude Code as `/mcp__review-intent__author_intent`)
+the reviewer can invoke to steer the change-making agent.
 
 ### Make it yours
 
@@ -115,8 +217,14 @@ intent _honestly_ — real rejected alternatives, stated assumptions, incidental
 changes marked as such — then offer to render the review:
 
 ```sh
-review-intent skill install        # install the authoring skill for your agent (all repos)
+review-intent skill install          # install the authoring skill for your agent (all repos)
+review-intent skill install --force  # overwrite an existing copy — use after upgrading review-intent
+review-intent skill uninstall        # remove it
 ```
+
+After you upgrade `review-intent`, re-run `skill install --force` to refresh the
+installed copy with the new guidance — `install` alone won't overwrite an existing
+skill file.
 
 A fluent rationalization is worse than nothing: it lowers the reviewer's guard while
 adding no signal. The skill pushes for "why I chose this over X," and to admit gaps

@@ -26,8 +26,12 @@ export interface FileSignals {
 }
 
 export interface RankedFile extends FileSignals {
-  /** 1-based review priority (1 = review first). */
+  /** 1-based final review position (1 = review first). Equals `measuredRank`
+   *  unless the agent supplied a `reviewOrder` override. */
   rank: number;
+  /** 1-based measured priority, before any agent override — kept so a reordered
+   *  (e.g. sunk) file stays auditable next to its measured rank. */
+  measuredRank: number;
   score: number;
 }
 
@@ -96,7 +100,12 @@ export function collectSignals(model: ReviewModel): FileSignals[] {
 /** Pure: files ranked by review priority (most attention-worthy first). Score
  *  blends normalized churn + reach with flat bonuses for a complexity hotspot
  *  and for unexplained changes, then demotes noise. Ties break by churn, then
- *  original diff order — fully deterministic. */
+ *  original diff order — fully deterministic.
+ *
+ *  This measured ranking is the un-gameable backbone. If the agent supplied a
+ *  `reviewOrder` override, the listed files lead in that order and the rest
+ *  follow by measured rank — but every file keeps its `measuredRank`, so a file
+ *  the agent sank stays auditable next to where measurement put it. */
 export function reviewOrder(model: ReviewModel): RankedFile[] {
   const sig = collectSignals(model);
   const maxChurn = Math.max(1, ...sig.map((s) => s.churn));
@@ -116,7 +125,40 @@ export function reviewOrder(model: ReviewModel): RankedFile[] {
     (a, b) => b.score - a.score || b.sig.churn - a.sig.churn || a.i - b.i,
   );
 
-  return scored.map(
-    (x, idx): RankedFile => ({ ...x.sig, score: x.score, rank: idx + 1 }),
-  );
+  const measured = scored.map((x, idx) => ({
+    ...x.sig,
+    score: x.score,
+    measuredRank: idx + 1,
+  }));
+
+  const override = model.reviewOrderOverride ?? [];
+  if (override.length === 0) {
+    return measured.map((m): RankedFile => ({ ...m, rank: m.measuredRank }));
+  }
+
+  // Agent override: listed files first (in the agent's order), then the rest in
+  // measured order. Match by normalized path; unknown paths are ignored here and
+  // surfaced separately by `unmatchedOrderPaths`.
+  const byPath = new Map(measured.map((m) => [norm(m.path), m]));
+  const used = new Set<number>();
+  const ordered: typeof measured = [];
+  for (const p of override) {
+    const m = byPath.get(norm(p));
+    if (m && !used.has(m.index)) {
+      ordered.push(m);
+      used.add(m.index);
+    }
+  }
+  for (const m of measured) if (!used.has(m.index)) ordered.push(m);
+
+  return ordered.map((m, idx): RankedFile => ({ ...m, rank: idx + 1 }));
+}
+
+/** Pure: override paths the agent listed that match no changed file — surfaced
+ *  rather than silently ignored (a likely typo or stale path). */
+export function unmatchedOrderPaths(model: ReviewModel): string[] {
+  const override = model.reviewOrderOverride ?? [];
+  if (override.length === 0) return [];
+  const have = new Set(model.files.map((f) => norm(f.path)));
+  return override.filter((p) => !have.has(norm(p)));
 }

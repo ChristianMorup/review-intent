@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildReviewModel } from "../src/match.js";
 import { ArtifactSchema } from "../src/types.js";
-import type { DiffFile, ScorecardModel, ReachModel, ComplexityModel } from "../src/types.js";
+import type { DiffFile, ScorecardModel, ReachModel, ComplexityModel, DiffScope } from "../src/types.js";
 
 const emptyScorecard: ScorecardModel = {
   filesChanged: 1,
@@ -27,6 +27,7 @@ const emptyComplexity: ComplexityModel = {
   worst: null,
   hotspots: [],
 };
+const cleanScope: DiffScope = { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] };
 
 const diff: DiffFile[] = [
   {
@@ -59,7 +60,7 @@ const artifact = ArtifactSchema.parse({
 });
 
 describe("buildReviewModel", () => {
-  const model = buildReviewModel(artifact, diff, "main", emptyScorecard, emptyReach, emptyComplexity);
+  const model = buildReviewModel(artifact, diff, "main", emptyScorecard, emptyReach, emptyComplexity, cleanScope);
 
   it("attaches each hunk intent to the hunk whose new-line range contains the anchor", () => {
     expect(model.files[0].hunks[0].intents.map((i) => i.why)).toEqual(["into first hunk"]);
@@ -102,7 +103,7 @@ describe("buildReviewModel", () => {
       overall: "o",
       tests: [{ describes: "returns null on a miss", kind: "unit" }],
     });
-    const m = buildReviewModel(withTests, diff, "main", emptyScorecard, emptyReach, emptyComplexity);
+    const m = buildReviewModel(withTests, diff, "main", emptyScorecard, emptyReach, emptyComplexity, cleanScope);
     expect(m.tests).toEqual([{ describes: "returns null on a miss", kind: "unit" }]);
   });
 
@@ -149,12 +150,38 @@ describe("buildReviewModel intent coverage with gaps", () => {
   });
 
   it("counts only files and hunks that carry intent", () => {
-    const m = buildReviewModel(partialArtifact, partialDiff, "main", emptyScorecard, emptyReach, emptyComplexity);
+    const m = buildReviewModel(partialArtifact, partialDiff, "main", emptyScorecard, emptyReach, emptyComplexity, cleanScope);
     expect(m.intentCoverage).toEqual({
       filesCovered: 1,
       filesTotal: 2,
       hunksCovered: 1,
       hunksTotal: 2,
     });
+  });
+});
+
+describe("buildReviewModel diff scope", () => {
+  const dirtyScope: DiffScope = {
+    includesUncommitted: true,
+    uncommittedFiles: ["src/greet.ts"],
+    untrackedFiles: ["src/new.ts"],
+  };
+  const dirtyDiff: DiffFile[] = [
+    { path: "src/greet.ts", status: "modified", hunks: [] },
+    { path: "src/new.ts", status: "added", hunks: [] },
+  ];
+  const m = buildReviewModel(artifact, dirtyDiff, "main", emptyScorecard, emptyReach, emptyComplexity, dirtyScope);
+
+  it("stores the diff scope on the model", () => {
+    expect(m.diffScope).toEqual(dirtyScope);
+  });
+
+  it("flags tracked files as uncommitted and new files as untracked", () => {
+    const greet = m.files.find((f) => f.path === "src/greet.ts")!;
+    const fresh = m.files.find((f) => f.path === "src/new.ts")!;
+    expect(greet.uncommitted).toBe(true);
+    expect(greet.untracked).toBeFalsy();
+    expect(fresh.untracked).toBe(true);
+    expect(fresh.uncommitted).toBeFalsy();
   });
 });

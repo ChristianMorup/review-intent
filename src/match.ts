@@ -8,6 +8,7 @@ import type {
   ScorecardModel,
   ReachModel,
   ComplexityModel,
+  DiffScope,
 } from "./types.js";
 
 /**
@@ -27,9 +28,12 @@ export function buildReviewModel(
   scorecard: ScorecardModel,
   reach: ReachModel,
   complexity: ComplexityModel,
+  diffScope: DiffScope,
 ): ReviewModel {
   const intentByPath = new Map(artifact.files.map((f) => [f.path, f]));
   const diffPaths = new Set(diff.map((f) => f.path));
+  const uncommittedSet = new Set(diffScope.uncommittedFiles);
+  const untrackedSet = new Set(diffScope.untrackedFiles);
 
   const files: AnnotatedFile[] = diff.map((file): AnnotatedFile => {
     const fileIntent = intentByPath.get(file.path);
@@ -52,6 +56,8 @@ export function buildReviewModel(
     return {
       path: file.path,
       status: file.status,
+      uncommitted: uncommittedSet.has(file.path) || undefined,
+      untracked: untrackedSet.has(file.path) || undefined,
       what: fileIntent?.what,
       why: fileIntent?.why,
       unmatchedIntents,
@@ -80,6 +86,7 @@ export function buildReviewModel(
     tldr: artifact.tldr,
     overall: artifact.overall,
     base,
+    diffScope,
     diagrams: artifact.diagrams,
     risks: artifact.risks,
     tests: artifact.tests,
@@ -89,5 +96,6 @@ export function buildReviewModel(
     intentCoverage,
     files,
     filesWithoutChanges,
+    reviewOrderOverride: artifact.reviewOrder,
   };
 }

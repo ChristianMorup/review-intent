@@ -28,7 +28,12 @@ const model = {
   tldr: "Adds 10 measured metrics and 5 SVG visualizations to the review page.",
   overall: "This change set extends the **scorecard** and adds a visual summary. Rejected a charting dependency in favour of pure inline SVG so `render.ts` stays deterministic.",
   base: "main",
-  diagrams: { class: "classDiagram\n  Scorecard <|-- Visuals", sequence: undefined },
+  diffScope: { includesUncommitted: false, uncommittedFiles: [], untrackedFiles: [] },
+  diagrams: {
+    class: "classDiagram\n  Scorecard <|-- Visuals",
+    sequence:
+      "sequenceDiagram\n  participant CLI\n  participant Scorecard\n  participant Render\n  CLI->>Scorecard: buildScorecard(diff)\n  Scorecard-->>CLI: metrics\n  CLI->>Render: renderHtml(model)\n  Render-->>CLI: review.html",
+  },
   risks: [
     { assumption: "Diff line counts approximate churn well", ifFalse: "Treemap areas mislead", howYoudKnow: "Compare with git --stat" },
   ],

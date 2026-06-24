@@ -111,7 +111,8 @@ why.
           "why": "Why this specific change. REQUIRED. Anchor = a line number in the NEW file." }
       ]
     }
-  ]
+  ],
+  "reviewOrder": ["src/the-crux.ts", "src/supporting.ts", "src/trivial-churn.ts"]
 }
 \`\`\`
 
@@ -182,15 +183,84 @@ sequenceDiagram
 Omit a diagram if the change genuinely has no structural or sequential story —
 don't draw a trivial two-box diagram to fill the slot.
 
+### Review order (\`reviewOrder\`, optional)
+
+By default \`review-intent\` orders the files by a **measured** priority (churn,
+reach, complexity, missing intent). That's the un-gameable backbone — but you
+know things measurement can't: which change is the *crux* and which is mechanical.
+Use \`reviewOrder\` to set the sequence you'd want a reviewer to read: an array of
+changed-file paths (as they appear in the diff), most-important first. Listed
+files lead in that order; any file you omit follows by measured rank.
+
+Reach for it when:
+- a small change is the whole point but sits next to a large mechanical one
+  (lead with the small one);
+- the change reads best as a narrative — entry point → callees, or a request
+  flow top to bottom;
+- genuinely trivial/generated files should sink to the bottom (list them last).
+
+The measured rank stays visible beside every file you move, so the reviewer can
+see what you reordered. That means the one thing you must **not** do is use
+\`reviewOrder\` to bury a risky, high-churn, or far-reaching change so the diff
+reads cleanly — the demotion will be plainly visible and it reads as exactly what
+it is. Order for the reviewer's understanding, never to soften scrutiny. Omit the
+field entirely to just use the measured order.
+
+### Reviewing from a worktree
+
+If you did the work in a git worktree (common for agent-driven changes), a few
+things matter:
+
+- **Run \`review-intent\` from the worktree's own root.** It keys everything off
+  the current directory — the diff it produces, the artifact it reads, and the
+  repo scans for reach and complexity. Running it from the main checkout reviews
+  the wrong tree.
+- **You don't need to commit first.** If the working tree is dirty, review-intent
+  folds your uncommitted *and* untracked changes into the diff automatically and
+  flags those files (a banner up top, an \`uncommitted\`/\`untracked\` badge per
+  file). What you ultimately hand off for *merge* is still the committed history —
+  the badges make the difference visible so the reviewer is never misled.
+- **The base resolves automatically.** \`main\`/\`master\` are shared across linked
+  worktrees, so they resolve from inside a worktree with no extra flags. Pass
+  \`--base <ref>\` if your worktree forked from a different branch.
+
 ## After writing it
 
-Offer to render — never auto-launch:
+Offer to review — never auto-launch:
 
 > I've written the review intent to \`.review/intent.json\`. Want me to open the
-> side-by-side review? (\`review-intent\`)
+> side-by-side review?
 
-If the user accepts, run \`review-intent\` via Bash from the repo root. It diffs
-the current branch against main and opens the rendered page in the browser.
+**Default to the \`review_changes\` MCP tool whenever it is available.** It opens an
+*interactive* review the CLI cannot: the reviewer can ask you questions about a
+hunk mid-review and you answer them live. Only fall back to the CLI when the MCP
+tool is genuinely not present.
+
+- **If the \`review_changes\` tool is available** (the review-intent MCP server is
+  configured), **call it** — do not shell out to the CLI instead. It renders the
+  side-by-side page from the \`.review/intent.json\` you just wrote, opens it in the
+  reviewer's browser, and **blocks until the next review event**. Pass \`cwd\` if you
+  worked in a git worktree (the worktree root) and \`base\` if you forked from
+  something other than main/master. The call returns one of:
+  - a **question** — the reviewer asked about a hunk. Answer it by calling
+    \`answer_review_question\` (with the \`sessionId\` and \`questionId\` from the event);
+    your answer appears live on the still-open page. Then you're blocked again on
+    the next event. **Keep answering until you get a decision** — a question is not
+    the end of the review.
+  - a **decision** (approve / request-changes) plus any comments and questions —
+    act on it: address requested changes and offer the review again; on approval,
+    you're done.
+  - an **abandoned** result — the reviewer closed the tab without deciding; re-offer
+    or ask how they'd like to proceed.
+
+  The tool runs the same completeness gate — if intent is incomplete it returns the
+  gaps instead of opening the page, so fill them rather than reaching for
+  \`allowGaps\`.
+- **Only as a fallback** (no MCP server configured), run \`review-intent\` via Bash
+  from the root of the working tree you made the changes in (the worktree root, if
+  you used one). This renders a **static page with no live Q&A** — the reviewer can
+  only add comments and copy the assembled prompt back to you manually. Prefer the
+  MCP tool above; reach for the CLI only when it is unavailable.
 
 ## Why this exists
 

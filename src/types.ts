@@ -68,6 +68,11 @@ export const ArtifactSchema = z.object({
   /** Human-readable descriptions of the test cases covering the change (claimed). */
   tests: z.array(TestCaseSchema).optional().default([]),
   files: z.array(FileIntentSchema).optional().default([]),
+  /** Agent's preferred review order: changed-file paths, most-important first.
+   *  Files listed here lead the review in this order; any unlisted changed file
+   *  follows by measured rank. Measured ranks stay visible so an override that
+   *  sinks a risky file is auditable. Optional — omit to use measured order. */
+  reviewOrder: z.array(z.string()).optional().default([]),
 });
 
 export type HunkIntent = z.infer<typeof HunkIntentSchema>;
@@ -108,6 +113,10 @@ export interface AnnotatedHunk extends DiffHunk {
 export interface AnnotatedFile {
   path: string;
   status: DiffFile["status"];
+  /** True when this file carries uncommitted (staged/unstaged) changes vs HEAD. */
+  uncommitted?: boolean;
+  /** True when this file is untracked (new, never committed). */
+  untracked?: boolean;
   /** undefined when the agent wrote no entry for this changed file (a gap). */
   what?: string;
   why?: string;
@@ -211,6 +220,17 @@ export interface ReachModel {
   truncatedNote?: string;
 }
 
+/** What the rendered diff covers beyond committed history. Computed by git.ts
+ *  from the working-tree state; plain data so match/render stay pure. */
+export interface DiffScope {
+  /** True when the diff includes uncommitted working-tree changes. */
+  includesUncommitted: boolean;
+  /** Tracked files with staged/unstaged changes folded in (posix, repo-relative). */
+  uncommittedFiles: string[];
+  /** Untracked-not-ignored files folded in via --no-index (posix, repo-relative). */
+  untrackedFiles: string[];
+}
+
 /** How much of the change set carries agent-authored intent (measured against
  *  the completeness contract). Meaningful even under `--allow-gaps`. */
 export interface IntentCoverage {
@@ -226,6 +246,8 @@ export interface ReviewModel {
   tldr: string;
   overall: string;
   base: string;
+  /** What the rendered diff covers beyond committed history (banner + badges). */
+  diffScope: DiffScope;
   diagrams: { class?: string; sequence?: string };
   risks: Risk[];
   /** Agent-described test cases (claimed; pure display, never measured). */
@@ -237,4 +259,7 @@ export interface ReviewModel {
   files: AnnotatedFile[];
   /** Intent entries for files that are not present in the diff. */
   filesWithoutChanges: { path: string; why?: string }[];
+  /** Agent's preferred review order (changed-file paths). Empty/absent → use the
+   *  measured order. Applied on top of the measured rank by `reviewOrder()`. */
+  reviewOrderOverride?: string[];
 }

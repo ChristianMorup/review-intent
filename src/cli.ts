@@ -4,16 +4,19 @@ import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import open from "open";
-import { resolveBase, getDiff, GitError } from "./git.js";
-import { loadArtifact, ArtifactError, DEFAULT_ARTIFACT_PATH } from "./artifact.js";
-import { parseDiffText } from "./diff-parser.js";
-import { buildReviewModel } from "./match.js";
+import { GitError } from "./git.js";
+import { ArtifactError, DEFAULT_ARTIFACT_PATH } from "./artifact.js";
 import { renderHtml } from "./render.js";
-import { loadConfig, ConfigError } from "./config.js";
-import { buildScorecard, isCodePath } from "./scorecard.js";
-import { scanRepo, buildReachGraph } from "./reach.js";
-import { analyzeComplexity } from "./complexity.js";
-import { findGaps, formatGaps } from "./completeness.js";
+import { ConfigError } from "./config.js";
+import { formatGaps } from "./completeness.js";
+import { buildReview } from "./pipeline.js";
+import { runMcp } from "./mcp.js";
+import {
+  installMcp,
+  uninstallMcp,
+  mcpConfigPath,
+  McpConfigError,
+} from "./mcp-config.js";
 import {
   installSkill,
   uninstallSkill,
@@ -25,6 +28,9 @@ const HELP = `review-intent — render an intent-annotated diff review in your b
 
 Usage:
   review-intent [options]
+  review-intent mcp
+  review-intent mcp install [--force]
+  review-intent mcp uninstall [--force]
   review-intent skill install [--local] [--force]
   review-intent skill uninstall [--local] [--force]
 
@@ -37,6 +43,10 @@ Options:
   -h, --help          Show this help
 
 Commands:
+  mcp                 Start the MCP stdio server exposing the review_changes tool
+  mcp install         Register the MCP server in ./.mcp.json (merges; --force
+                      overwrites a differing entry)
+  mcp uninstall       Remove the review-intent entry from ./.mcp.json
   skill install       Install the review-intent-authoring Claude Code skill
                       (default: ~/.claude/skills; --local: ./.claude/skills)
   skill uninstall     Remove the skill
@@ -87,10 +97,57 @@ async function runSkill(argv: string[]): Promise<void> {
   process.exitCode = 1;
 }
 
+async function runMcpConfig(argv: string[]): Promise<void> {
+  const sub = argv[0];
+  const { values } = parseArgs({
+    args: argv.slice(1),
+    options: { force: { type: "boolean", default: false } },
+  });
+  const file = mcpConfigPath();
+
+  if (sub === "install") {
+    const result = await installMcp({ force: values.force });
+    if (result === "installed") {
+      process.stdout.write(`Registered the review-intent MCP server in ${file}\n`);
+      process.stdout.write(`Restart Claude Code (or reopen this project) to pick it up.\n`);
+    } else if (result === "updated") {
+      process.stdout.write(`Updated the review-intent MCP server entry in ${file}\n`);
+    } else if (result === "already") {
+      process.stdout.write(`review-intent MCP server already registered in ${file}\n`);
+    } else {
+      process.stderr.write(`A different "review-intent" entry already exists in ${file}.\n`);
+      process.stderr.write(`Run 'review-intent mcp install --force' to overwrite it.\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  // sub === "uninstall"
+  const result = await uninstallMcp({ force: values.force });
+  if (result === "removed") {
+    process.stdout.write(`Removed the review-intent MCP server from ${file}\n`);
+  } else if (result === "not-installed") {
+    process.stdout.write(`No review-intent MCP server entry in ${file}\n`);
+  } else {
+    process.stderr.write(`The "review-intent" entry in ${file} has been modified.\n`);
+    process.stderr.write(`Run 'review-intent mcp uninstall --force' to remove it anyway.\n`);
+    process.exitCode = 1;
+  }
+}
+
 async function main(): Promise<void> {
   const rawArgv = process.argv.slice(2);
   if (rawArgv[0] === "skill") {
     await runSkill(rawArgv.slice(1));
+    return;
+  }
+  if (rawArgv[0] === "mcp") {
+    const sub = rawArgv[1];
+    if (sub === "install" || sub === "uninstall") {
+      await runMcpConfig(rawArgv.slice(1));
+    } else {
+      await runMcp(rawArgv.slice(1));
+    }
     return;
   }
 
@@ -111,35 +168,15 @@ async function main(): Promise<void> {
     return;
   }
 
-  const cwd = process.cwd();
-  const base = resolveBase(cwd, values.base);
-  const rawDiff = getDiff(cwd, base);
-  const artifact = loadArtifact(cwd, values.artifact);
-  const config = loadConfig(cwd);
-  const diff = parseDiffText(rawDiff);
-
-  // Part 1: objective scorecard, computed from the diff.
-  const scorecard = buildScorecard(diff, config);
-
-  // Part 3: file-level reach, computed by scanning the repo for importers of
-  // the changed code files.
-  const changedCodePaths = diff
-    .filter((f) => f.status !== "deleted" && isCodePath(f.path))
-    .map((f) => f.path);
-  const { files: repoFiles, truncated } = scanRepo(cwd);
-  const reach = buildReachGraph(repoFiles, changedCodePaths, {
-    scanTruncated: truncated,
+  const { model, gaps } = buildReview({
+    cwd: process.cwd(),
+    base: values.base,
+    artifact: values.artifact,
   });
 
-  // Part 1 (cont.): measured cyclomatic complexity of the changed code, via the
-  // external lizard analyzer. Degrades gracefully if lizard isn't installed.
-  const complexity = analyzeComplexity(cwd, changedCodePaths, config.complexityThreshold);
-
-  const model = buildReviewModel(artifact, diff, base, scorecard, reach, complexity);
 
   // Strict completeness gate: refuse to render incomplete intent unless the
   // author explicitly opts into a draft.
-  const gaps = findGaps(model);
   if (gaps.length > 0 && !values["allow-gaps"]) {
     process.stderr.write(`\n${formatGaps(gaps)}\n`);
     process.exitCode = 1;
@@ -161,7 +198,8 @@ main().catch((err) => {
   if (
     err instanceof GitError ||
     err instanceof ArtifactError ||
-    err instanceof ConfigError
+    err instanceof ConfigError ||
+    err instanceof McpConfigError
   ) {
     process.stderr.write(`\n${err.message}\n`);
   } else {

@@ -1491,9 +1491,11 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
   background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 10px;
 }
 .cbox.open .cinput { display: block; }
-.q-ask { margin-top: 8px; align-self: flex-start; font: inherit; font-size: 0.85em; padding: 3px 10px; border: 1px solid var(--add); border-radius: 6px; background: var(--add-soft, var(--accent-soft)); color: var(--add); cursor: pointer; }
+.q-ask { display: none; margin-top: 8px; align-self: flex-start; font: inherit; font-size: 0.85em; padding: 3px 10px; border: 1px solid var(--add); border-radius: 6px; background: var(--add-soft, var(--accent-soft)); color: var(--add); cursor: pointer; }
+.cbox.open .q-ask { display: inline-block; }
 .q-ask:disabled { opacity: 0.7; cursor: default; }
-.q-answer { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--add); background: var(--accent-soft); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+.q-answer { display: none; margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--add); background: var(--accent-soft); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
+.cbox.open .q-answer { display: block; }
 .q-answer.pending { opacity: 0.7; font-style: italic; }
 .cbox.q-resolved .cbtn-q::after { content: " ✓"; }
 
@@ -1791,7 +1793,7 @@ ${submit ? `
     Array.prototype.slice.call(document.querySelectorAll('.cinput[data-akind="question"]')).forEach(function (ta) {
       var cbox = ta.closest(".cbox"); if (!cbox) return;
       var ask = document.createElement("button");
-      ask.type = "button"; ask.className = "q-ask"; ask.textContent = "Ask the agent now";
+      ask.type = "button"; ask.className = "q-ask"; ask.textContent = "Submit";
       ta.insertAdjacentElement("afterend", ask);
       ask.addEventListener("click", function () {
         var q = clean(ta.value); if (!q) return;
@@ -1805,11 +1807,11 @@ ${submit ? `
           body: JSON.stringify({ questionId: qid, ref: ref, question: q })
         }).then(function (r) {
           if (!r.ok) {
-            ask.disabled = false; ask.textContent = "Ask the agent now";
+            ask.disabled = false; ask.textContent = "Submit";
             slot.className = "q-answer"; slot.textContent = "Server error (" + r.status + ") — the review session may have expired.";
           }
         }).catch(function () {
-          ask.disabled = false; ask.textContent = "Ask the agent now";
+          ask.disabled = false; ask.textContent = "Submit";
           slot.className = "q-answer"; slot.textContent = "Could not reach the review server — is it still running?";
         });
       });

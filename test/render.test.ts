@@ -383,6 +383,11 @@ describe("live Q&A (submit mode)", () => {
     expect(withSubmit).toContain('"/ask"');
     expect(withSubmit).toContain("q-ask");
     expect(withSubmit).toContain("q-resolved");
+    // The ask-the-agent button is labelled "Submit" and only shows once the
+    // question box is expanded (revealed on .cbox.open, like the textarea).
+    expect(withSubmit).toContain('ask.textContent = "Submit"');
+    expect(withSubmit).not.toContain("Ask the agent now");
+    expect(withSubmit).toContain(".cbox.open .q-ask");
 
     const plain = renderHtml(model);
     expect(plain).not.toContain('new EventSource("/events")');

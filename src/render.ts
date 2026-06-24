@@ -5,6 +5,7 @@ import type {
   DiffLine,
   IntentCoverage,
   ComplexityModel,
+  ReachModel,
   Risk,
   TestCase,
 } from "./types.js";
@@ -556,6 +557,88 @@ function squarify(items: SqItem[], rect: { x: number; y: number; w: number; h: n
   return out;
 }
 
+/** Reach ripple — changed files at the centre, importers rippling outward, one
+ *  line per dependency edge. Returns "" when nothing imports the change set, so
+ *  the card drops out of the grid like the other empty charts. */
+function renderReachRipple(reach: ReachModel): string {
+  if (reach.edges.length === 0) return "";
+  const note = reach.truncatedNote
+    ? `<div class="reach-note">⚠ ${esc(reach.truncatedNote)}</div>`
+    : "";
+  return `<div class="card reach zoomable">
+  <h3>Reach <span class="src">measured · heuristic</span></h3>
+  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
+  ${reachRipple(reach)}
+  ${note}
+</div>`;
+}
+
+/** Inline-SVG radial "ripple": changed files at the centre, importers on an
+ *  outer ring, with a connecting line per dependency edge. Pure & deterministic. */
+function reachRipple(reach: ReachModel): string {
+  const W = 720;
+  const H = 420;
+  const cx = W / 2;
+  const cy = H / 2;
+  const cap = 36;
+  const importers = [...new Set(reach.edges.map((e) => e.from))];
+  const shown = importers.slice(0, cap);
+  const hidden = importers.length - shown.length;
+
+  const cpos = new Map<string, { x: number; y: number }>();
+  reach.changed.forEach((c, i) => {
+    if (reach.changed.length === 1) {
+      cpos.set(c, { x: cx, y: cy });
+    } else {
+      const a = (i / reach.changed.length) * 2 * Math.PI - Math.PI / 2;
+      cpos.set(c, { x: cx + 64 * Math.cos(a), y: cy + 64 * Math.sin(a) });
+    }
+  });
+
+  const ipos = new Map<string, { x: number; y: number }>();
+  shown.forEach((f, i) => {
+    const a = (i / shown.length) * 2 * Math.PI - Math.PI / 2;
+    ipos.set(f, { x: cx + 190 * Math.cos(a), y: cy + 150 * Math.sin(a) });
+  });
+
+  const rings = `<circle cx="${cx}" cy="${cy}" r="155" class="ripple-ring" /><circle cx="${cx}" cy="${cy}" r="80" class="ripple-ring" />`;
+  const lines = reach.edges
+    .filter((e) => ipos.has(e.from) && cpos.has(e.to))
+    .map((e) => {
+      const a = ipos.get(e.from)!;
+      const b = cpos.get(e.to)!;
+      return `<line x1="${a.x.toFixed(1)}" y1="${a.y.toFixed(1)}" x2="${b.x.toFixed(1)}" y2="${b.y.toFixed(1)}" class="ripple-edge" />`;
+    })
+    .join("");
+  const iNodes = shown.map((f) => rippleNode(ipos.get(f)!, f, false)).join("");
+  const cNodes = reach.changed.map((c) => rippleNode(cpos.get(c)!, c, true)).join("");
+  const more =
+    hidden > 0
+      ? `<text x="${cx}" y="${H - 8}" text-anchor="middle" class="ripple-label">+${hidden} more importer(s) not drawn</text>`
+      : "";
+
+  return `<svg class="viz-ripple" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img">
+  ${rings}${lines}${iNodes}${cNodes}${more}
+</svg>`;
+}
+
+function rippleNode(
+  p: { x: number; y: number },
+  path: string,
+  isChanged: boolean,
+): string {
+  const r = isChanged ? 8 : 5;
+  const fill = isChanged ? C_ACCENT : "var(--viz-node)";
+  const stroke = isChanged ? "var(--viz-accent-stroke)" : "var(--viz-node-stroke)";
+  const ly = isChanged ? p.y - 13 : p.y + 16;
+  const tip = isChanged ? `${path} — changed file` : `${path} — imports a changed file`;
+  return `<g class="ripple-node">
+  <title>${esc(tip)}</title>
+  <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" />
+  <text x="${p.x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="ripple-label">${esc(shortPath(path, 22))}</text>
+</g>`;
+}
+
 /** Deeper analysis: the demoted analytics, behind one open disclosure so they
  *  stay available without piling up above the diffs. Architecture (the authored
  *  diagrams) leads, full-width; coverage / complexity / signals / tests follow
@@ -567,6 +650,7 @@ function renderDeeperAnalysis(model: ReviewModel): string {
   const grid = [
     renderDiffMass(stats),
     renderTreemap(stats),
+    renderReachRipple(model.reach),
     renderComplexityHotspots(model.complexity),
     renderCoverageRings(model.intentCoverage),
     renderScorecardSignals(model),
@@ -1436,6 +1520,11 @@ body {
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
 .viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.viz-ripple { max-width: 720px; margin: 0 auto; }
+.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
+.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
+.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
 .viz-dot-hot { fill: var(--del); }
 .viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }

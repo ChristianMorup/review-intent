@@ -175,10 +175,10 @@ describe("renderHtml", () => {
     expect(html).toContain("concurrency test");
   });
 
-  it("renders diff-mass and treemap, but not the reach-ripple chart", () => {
+  it("renders the diff-mass, treemap and reach-ripple charts", () => {
     expect(html).toContain('class="viz-diffmass"');
     expect(html).toContain('class="viz-treemap"');
-    expect(html).not.toContain('class="viz-ripple"');
+    expect(html).toContain('class="viz-ripple"');
   });
 
   it("describes and tooltips the coverage rings", () => {
@@ -194,10 +194,11 @@ describe("renderHtml", () => {
     expect(cx).toContain("independent paths through the code");
   });
 
-  it("renders the deeper-analysis charts (diff-mass, treemap, change map, rings, complexity)", () => {
+  it("renders the deeper-analysis charts (diff-mass, treemap, reach, change map, rings, complexity)", () => {
     expect(html).toContain('class="deeper"');
     expect(html).toContain('class="viz-diffmass"');
     expect(html).toContain('class="viz-treemap"');
+    expect(html).toContain('class="viz-ripple"');
     expect(html).toContain('class="viz-scatter"');
     expect(html).toContain('class="viz-rings"');
     expect(html).toContain('class="viz-complexity"');

@@ -298,6 +298,11 @@ body {
 .viz-danger-label { fill: var(--del); }
 .viz-axis-label { fill: var(--muted); font-size: 11px; font-family: var(--sans); }
 .viz-cell-label { fill: var(--viz-cell-label); font-family: var(--mono); font-size: 10px; font-weight: 600; }
+.viz-ripple { max-width: 720px; margin: 0 auto; }
+.ripple-ring { fill: none; stroke: var(--line-2); stroke-dasharray: 3 5; }
+.ripple-edge { stroke: var(--accent); stroke-width: 1; opacity: 0.32; }
+.ripple-label { fill: var(--muted); font-family: var(--mono); font-size: 10px; }
+.reach-note { color: var(--warn); font-size: 12px; margin-top: 10px; }
 .viz-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2.5; }
 .viz-dot-hot { fill: var(--del); }
 .viz-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; }
@@ -1629,6 +1634,38 @@ html { scroll-behavior: smooth; scroll-padding-top: 48px; }
     <g><title>src/match.ts — 20 lines changed</title><rect x="560.4" y="236.2" width="159.6" height="63.8" fill="var(--viz-s5)" fill-opacity="0.82" stroke="var(--viz-cell-stroke)" stroke-width="1" /><text x="565.4" y="251.2" class="viz-cell-label">match.ts</text></g>
   </svg>
   <p class="viz-cap">Every changed file as a rectangle: area ∝ lines changed, so the biggest tiles are where most of the diff lives. Colour groups files by top-level directory; a red outline marks a file with no intent written. Hover a tile for its path and line count.</p>
+</div>
+    <div class="card reach zoomable">
+  <h3>Reach <span class="src">measured · heuristic</span></h3>
+  <p class="muted">Changed files sit at the centre; files that import them ripple outward (line = "depends on"). Heuristic — may miss or over-match.</p>
+  <svg class="viz-ripple" viewBox="0 0 720 420" preserveAspectRatio="xMidYMid meet" role="img">
+  <circle cx="360" cy="210" r="155" class="ripple-ring" /><circle cx="360" cy="210" r="80" class="ripple-ring" /><line x1="360.0" y1="60.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="360.0" y1="60.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="550.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><line x1="360.0" y1="360.0" x2="360.0" y2="146.0" class="ripple-edge" /><line x1="170.0" y1="210.0" x2="360.0" y2="274.0" class="ripple-edge" /><g class="ripple-node">
+  <title>src/cli.ts — imports a changed file</title>
+  <circle cx="360.0" cy="60.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="76.0" text-anchor="middle" class="ripple-label">src/cli.ts</text>
+</g><g class="ripple-node">
+  <title>src/match.ts — imports a changed file</title>
+  <circle cx="550.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="550.0" y="226.0" text-anchor="middle" class="ripple-label">src/match.ts</text>
+</g><g class="ripple-node">
+  <title>test/render.test.ts — imports a changed file</title>
+  <circle cx="360.0" cy="360.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="376.0" text-anchor="middle" class="ripple-label">test/render.test.ts</text>
+</g><g class="ripple-node">
+  <title>test/scorecard.test.ts — imports a changed file</title>
+  <circle cx="170.0" cy="210.0" r="5" fill="var(--viz-node)" stroke="var(--viz-node-stroke)" stroke-width="1.5" />
+  <text x="170.0" y="226.0" text-anchor="middle" class="ripple-label">test/scorecard.test.ts</text>
+</g><g class="ripple-node">
+  <title>src/render.ts — changed file</title>
+  <circle cx="360.0" cy="146.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="133.0" text-anchor="middle" class="ripple-label">src/render.ts</text>
+</g><g class="ripple-node">
+  <title>src/scorecard.ts — changed file</title>
+  <circle cx="360.0" cy="274.0" r="8" fill="var(--viz-accent)" stroke="var(--viz-accent-stroke)" stroke-width="1.5" />
+  <text x="360.0" y="261.0" text-anchor="middle" class="ripple-label">src/scorecard.ts</text>
+</g>
+</svg>
+  
 </div>
     <div class="card viz viz-span zoomable">
   <h3>Complexity hotspots <span class="src">lizard · CCN</span></h3>

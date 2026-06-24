@@ -260,25 +260,91 @@ export interface SizeTier {
   /** Churn strictly below this is in-tier; the last tier is the open top. */
   max: number;
   flag: boolean;
-  /** Interchangeable size words — fit "this change set is ___". */
-  words: string[];
+  /** Interchangeable one-liners for this size — one is picked per diff. */
+  quips: string[];
 }
 
 export const SIZE_TIERS: SizeTier[] = [
-  { name: "small", max: 200, flag: false, words: ["small", "tidy", "bite-sized", "compact", "modest"] },
-  { name: "medium", max: 500, flag: false, words: ["medium", "moderate", "middling", "fair-sized", "middleweight"] },
-  { name: "large", max: 1000, flag: false, words: ["large", "hefty", "chunky", "beefy", "sizeable"] },
-  { name: "very large", max: 5000, flag: true, words: ["very large", "sprawling", "massive", "enormous", "whopping"] },
-  { name: "huge", max: Infinity, flag: true, words: ["humongous", "gigantic", "ludicrous", "colossal", "monstrous"] },
-];
-
-/** Playful "brace yourself" taglines for the flagged (very large / huge) tiers. */
-const SIZE_TAGLINES = [
-  "Get yourself a cup of coffee for this one.",
-  "Pace yourself — review it in chunks, not one pass.",
-  "Settle in and take it section by section.",
-  "This is not a one-pass review.",
-  "Block out some real time for it.",
+  {
+    name: "small",
+    max: 200,
+    flag: false,
+    quips: [
+      "Small and sharp — someone here gets the idea behind small commits.",
+      "A small step for this repo, a giant leap for code review.",
+      "This'll be done before your coffee's cold.",
+      "Short and sweet — no notes.",
+      "One does not simply… oh, you did. Clean little PR.",
+      "Easy like Sunday morning.",
+      "The kind of diff that gets approved on the first pass.",
+    ],
+  },
+  {
+    name: "medium",
+    max: 500,
+    flag: false,
+    quips: [
+      "A reasonable chunk — nothing a focused pass can't handle.",
+      "Goldilocks size: not too big, not too small.",
+      "Medium rare — enough to chew on, easy to swallow.",
+      "A one-coffee review. Grab your mug.",
+      "Not your first rodeo — a normal-sized review.",
+      "A healthy serving. Pace is optional.",
+      "Roll up one sleeve for this one.",
+      "Nothing scary here — just a bit to read.",
+    ],
+  },
+  {
+    name: "large",
+    max: 1000,
+    flag: false,
+    quips: [
+      "Beefy. Settle into your chair for this one.",
+      "Getting chunky — clear a real slot, not a coffee break.",
+      "A sit-down meal, not a snack.",
+      "Buckle up — it's a fair haul.",
+      "This one earns a fresh coffee.",
+      "Large and in charge: give it your full attention.",
+      "Both hands on the wheel for this.",
+      "A solid expedition — pack accordingly.",
+      "Don't review this one half-asleep.",
+      "Stretch first; you'll be reading a while.",
+    ],
+  },
+  {
+    name: "very large",
+    max: 5000,
+    flag: true,
+    quips: [
+      "One cup of coffee is probably not enough for this.",
+      "You better block the next couple of hours in your calendar for this one.",
+      "We're gonna need a bigger coffee.",
+      "Sprawling — cancel your afternoon plans.",
+      "This is a marathon, not a sprint.",
+      "Strap in. This is the long haul.",
+      "This diff has chapters.",
+      "Put on a playlist; you'll be here a while.",
+      "Massive. Maybe split it next time?",
+      "Bring snacks.",
+    ],
+  },
+  {
+    name: "huge",
+    max: Infinity,
+    flag: true,
+    quips: [
+      "One cup of coffee is definitely not enough for this.",
+      "Clear your calendar — and maybe your conscience.",
+      "Humongous. Frodo had a shorter journey.",
+      "We're gonna need a bigger boat.",
+      "I have a bad feeling about this.",
+      "Houston, we have a diff.",
+      "Ludicrous size — Spaceballs would be proud.",
+      "This is the diff that ate Tokyo.",
+      "A full-day quest — pack a lunch.",
+      "You shall not pass… not without a clear afternoon and three coffees.",
+    ],
+  },
 ];
 
 /** Pure: the size tier for a churn count. */
@@ -307,32 +373,30 @@ function renderVerdict(model: ReviewModel): string {
   const hotFiles = [...new Set(hotspots.map((h) => basename(h.file)))].slice(0, 3);
   // "code changed but tests didn't" — measured, the same signal the badge uses.
   const codeNoTests = s.codeFiles > 0 && s.testFiles === 0;
-  // Hard size tiers by total churn (± lines) — measured, never guessed. The size
-  // word + tagline are picked deterministically from the diff (stable per diff).
+  // Hard size tiers by total churn (± lines) — measured, never guessed. The quip
+  // is picked deterministically from the diff (varied across diffs, stable for one).
   const churn = s.added + s.removed;
   const tier = sizeTier(churn);
   const seed = strHash(model.title) + churn + s.filesChanged;
-  const sizeWord = tier.words[seed % tier.words.length];
-  const tagline = SIZE_TAGLINES[(seed * 7 + 3) % SIZE_TAGLINES.length];
+  const quip = tier.quips[seed % tier.quips.length];
+  // The big tiers (flag) also state the measured count to justify the warn tone.
+  const sizeBit = tier.flag
+    ? `${quip} ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}.`
+    : quip;
 
-  const parts: string[] = [];
-  if (tier.flag) {
-    parts.push(
-      `This change set is ${sizeWord} — ${churn} changed lines across ${s.filesChanged} file${plural(s.filesChanged)}. ${tagline}`,
-    );
-  }
+  const flagParts: string[] = [];
   if (hotFiles.length) {
-    parts.push(
+    flagParts.push(
       `${hotspots.length} complexity hotspot${plural(hotspots.length)} (${hotFiles.join(", ")}) ${hotspots.length === 1 ? "carries" : "carry"} the most risk — start there.`,
     );
   }
   if (codeNoTests) {
-    parts.push(`Code changed but no test files did — confirm the change is covered.`);
+    flagParts.push(`Code changed but no test files did — confirm the change is covered.`);
   }
-  const flagged = parts.length > 0;
+  const flagged = tier.flag || flagParts.length > 0;
   const msg = flagged
-    ? parts.join(" ")
-    : `Nothing flags as high-risk — this change set is ${sizeWord} and the intent is covered. Skim in the order on the left.`;
+    ? [sizeBit, ...flagParts].join(" ")
+    : `Nothing flags as high-risk — ${quip} Skim in the order on the left.`;
   return `<div class="verdict ${flagged ? "verdict-warn" : "verdict-ok"}" role="note">
   <span class="verdict-icon" aria-hidden="true">${flagged ? "⚑" : "✓"}</span>
   <div class="verdict-msg">${esc(msg)}</div>

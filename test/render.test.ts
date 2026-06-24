@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { renderHtml, sizeTier, SIZE_TIERS } from "../src/render.js";
 import type { ReviewModel } from "../src/types.js";
 
-const tierWords = (name: string) => SIZE_TIERS.find((t) => t.name === name)!.words;
-const hasOneOf = (html: string, words: string[]) =>
-  words.some((w) => html.includes(`this change set is ${w}`));
+const tierQuips = (name: string) => SIZE_TIERS.find((t) => t.name === name)!.quips;
+const hasQuip = (html: string, quips: string[]) => quips.some((q) => html.includes(q));
 
 const model: ReviewModel = {
   title: "My change",
@@ -606,8 +605,8 @@ describe("renderHtml two-pane shell", () => {
     });
     expect(calm).toContain('class="verdict verdict-ok"');
     expect(calm).toContain("Nothing flags as high-risk");
-    // churn here is 10 + 4 = 14 → small tier; the size word is measured, not guessed
-    expect(hasOneOf(calm, tierWords("small"))).toBe(true);
+    // churn here is 10 + 4 = 14 → small tier; a small-bucket quip is shown
+    expect(hasQuip(calm, tierQuips("small"))).toBe(true);
   });
 
   it("flags a huge change set by measured churn even when nothing else does", () => {
@@ -618,9 +617,9 @@ describe("renderHtml two-pane shell", () => {
     });
     expect(huge).toContain('class="verdict verdict-warn"');
     expect(huge).toContain("21109 changed lines across 243 files");
-    // a word from the huge bucket, never "small"
-    expect(tierWords("huge").some((w) => huge.includes(`This change set is ${w}`))).toBe(true);
-    expect(hasOneOf(huge, tierWords("small"))).toBe(false);
+    // a quip from the huge bucket, and none from the small one
+    expect(hasQuip(huge, tierQuips("huge"))).toBe(true);
+    expect(hasQuip(huge, tierQuips("small"))).toBe(false);
   });
 
   it("labels a large-but-not-flagged change set without warning", () => {
@@ -630,7 +629,7 @@ describe("renderHtml two-pane shell", () => {
       scorecard: { ...model.scorecard, added: 600, removed: 200, testFiles: 1 }, // churn 800 → large
     });
     expect(large).toContain('class="verdict verdict-ok"');
-    expect(hasOneOf(large, tierWords("large"))).toBe(true);
+    expect(hasQuip(large, tierQuips("large"))).toBe(true);
   });
 
   it("picks the size word deterministically (stable across renders)", () => {
@@ -811,7 +810,7 @@ describe("sizeTier", () => {
     expect(sizeTier(9000).flag).toBe(true);
   });
 
-  it("gives every tier five interchangeable size words", () => {
-    for (const t of SIZE_TIERS) expect(t.words).toHaveLength(5);
+  it("gives every tier a bucket of quips", () => {
+    for (const t of SIZE_TIERS) expect(t.quips.length).toBeGreaterThanOrEqual(5);
   });
 });

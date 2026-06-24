@@ -56,6 +56,40 @@ async function clickInTool(label, selector) {
   });
 }
 
+// Scroll the live iframe so a given selector sits near the top of the device
+// viewport (with an optional margin). Falls back to a numeric top if the
+// selector is absent. Used by the back-half feature scenes that frame elements
+// deep in the page (charts, file spine, the Q&A panel).
+async function scrollToInTool(label, selector, margin = 80) {
+  await step(label, async () => {
+    const did = await frame().evaluate(({ sel, m }) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      const top = el.getBoundingClientRect().top + window.scrollY - m;
+      window.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+      return true;
+    }, { sel: selector, m: margin });
+    if (!did) console.warn("[step:" + label + "] scroll selector not found:", selector);
+  });
+}
+
+// Type text into a field inside the live iframe with a real input event so the
+// page's handlers fire, then return the field's on-screen rect (device coords).
+async function typeInTool(label, selector, text) {
+  await step(label, async () => {
+    const ok = await frame().evaluate(({ sel, txt }) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      el.focus();
+      el.value = txt;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }, { sel: selector, txt: text });
+    if (!ok) console.warn("[step:" + label + "] type selector not found:", selector);
+  });
+}
+
 console.log("goto", stageUrl);
 await page.goto(stageUrl, { waitUntil: "load" });
 // wait for stage hooks
@@ -249,27 +283,28 @@ await step("s8", async () => {
     );
   });
 });
-await wait(2750);
+await wait(2300);
 
 // ============================================================
-// SCENE 9 — 0:29  visual-summary.png 5 charts, beat-cut push (3s)
+// SCENE 9 — 0:29  LIVE deeper-analysis charts (.deeper-grid), gentle push (3s)
 // ============================================================
+// Two-pane rework: the old static section.visuals (five charts) is gone. The
+// new charts live in the always-open <details class="deeper"> as .deeper-grid
+// (.viz-treemap / .viz-scatter / .viz-diffmass / .viz-complexity). We frame the
+// real iframe scrolled to that grid instead of the stale visual-summary crop.
 mark("charts");
 await step("s9", async () => {
-  await ev(() => { hideText(); hideShot("assets/scorecard-crop.png"); hideShot("risk-ledger.png"); });
+  await ev(() => { hideText(); hideShots(); });
   await wait(150);
-  // visual-summary-crop is 2040x1980 (all five charts, trimmed margins). Scale ~0.50 =>
-  // ~1020x990 — fills the frame height, centered, no corner-drop. Gentle push-in.
-  // Caption is parked in a TOP scrim band so it NEVER sits over the red change-map dot
-  // (which lives in the lower half of the grid).
+  // .deeper-grid sits at ~y2234 in the page; scroll it under the top of the
+  // device and push the camera in a touch so the four hand-drawn SVG charts read.
+  await scrollToInTool("s9-scroll", ".deeper-grid", 110);
+  await ev(() => { showTool({ scale: 1.12, ty: 30 }); });
+  await wait(500);
   await ev(() => {
-    showShot("assets/visual-summary-crop.png", {
-      fromScale: 0.47, fromTx: 0, fromTy: 90,
-      scale: 0.51, tx: 0, ty: 90, duration: 2900
-    });
     showTitle(
-      '<div class="mid" style="font-size:46px">Five charts. Hand-drawn SVG. Zero deps.</div>' +
-      '<div class="sub"><span class="accent">Code changed, tests didn\'t? Red flag, raised.</span></div>',
+      '<div class="mid" style="font-size:46px">Four charts. Hand-drawn SVG. Zero deps.</div>' +
+      '<div class="sub"><span class="accent">Treemap, risk-vs-churn, diff mass, complexity.</span></div>',
       { top: true, scrim: true }
     );
   });
@@ -327,8 +362,8 @@ await step("s11", async () => {
   await wait(380);
   mark("theme-synth");
   await clickInTool("theme-synth", '.theme-opt[data-theme-id="synthwave"]');
-  await wait(1900);
-  // then morph to dark for the second palette beat (and to seed scene 12's dark card)
+  await wait(1500);
+  // then morph to dark for the second palette beat (and to seed the dark CTA card)
   await clickInTool("gear-2", ".tb-gear");
   await wait(380);
   mark("theme-dark");
@@ -337,10 +372,107 @@ await step("s11", async () => {
 });
 
 // ============================================================
-// SCENE 12 — 0:39  CTA card (2s)
+// SCENE 12 — NEW  "Meet the new review page" — two-pane shell (4s)
+// ============================================================
+// Establishing beat on the redesigned two-pane layout: a sticky review-order
+// rail on the left, the deep-dive column on the right. Scroll to the very top so
+// both panes are in frame, pull the camera back to a clean 1:1 so the whole
+// shell reads.
+mark("twopane");
+await step("s12-twopane", async () => {
+  await ev(() => { hideText(); hideShots(); });
+  await wait(120);
+  await scrollToInTool("s12-top", ".shell", 24);
+  await ev(() => { showTool({ scale: 1.0, ty: 0 }); });
+  await wait(700);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Meet the new review page.</div>' +
+      '<div class="sub"><span class="accent">Two panes</span> — a review-order rail beside the deep dive.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+});
+await wait(2500);
+
+// ============================================================
+// SCENE 13 — NEW  Review-order override — file spine + measured #N (4.5s)
+// ============================================================
+// The left rail's file spine shows the AUTHOR-SET review order (1..7) while each
+// row still carries its MEASURED rank badge (.file-rank-measured). When the
+// author sinks a risky file, its measured #1 stays visible — the override is
+// auditable, not hidden. Frame the rail and push in on the spine.
+mark("revorder");
+await step("s13-revorder", async () => {
+  await ev(() => { hideText(); });
+  await scrollToInTool("s13-top", ".spine", 60);
+  // Nudge the camera left+in so the rail's spine fills frame (rail sits left of
+  // centre in the device); the measured #N badges become legible.
+  await ev(() => { showTool({ scale: 1.42, tx: 360, ty: 150 }); });
+  await wait(800);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Author sets the <span class="accent">review order</span>.</div>' +
+      '<div class="sub">The measured rank stays visible — sink a risky file and the override is auditable.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+  await wait(1100);
+  mark("revorder-badge");
+  // brief press highlight on a measured-rank badge to draw the eye to "measured #1"
+  await clickInTool("revorder-badge", ".file-rank-measured");
+});
+await wait(1400);
+
+// ============================================================
+// SCENE 14 — NEW  Live reviewer Q&A over MCP (5s)
+// ============================================================
+// The ask-the-agent panel (.review-feedback) lets a reviewer ask a question
+// right on the page; over MCP the agent answers live — no context switch back to
+// the chat. Scroll to the panel, type a real question into .fb-general-input,
+// then reveal a scripted answer bubble overlay (stage-side, deterministic).
+mark("qa-scene");
+await step("s14-qa", async () => {
+  await ev(() => { hideText(); hideAnswer(); });
+  await scrollToInTool("s14-top", ".review-feedback", 90);
+  await ev(() => { showTool({ scale: 1.06, ty: 10 }); });
+  await wait(600);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Ask the agent — <span class="accent">on the page</span>.</div>',
+      { top: true, scrim: true }
+    );
+  });
+  await wait(500);
+  mark("qa-type");
+  await typeInTool("qa-type", ".fb-general-input",
+    "Why namespace the cache key by userId?");
+  await wait(900);
+  await ev(() => hideText());
+  mark("qa-answer");
+  // scripted answer bubble (stage overlay) — agent replies live over MCP
+  await ev(() => {
+    showAnswer(
+      "Q: Why namespace the cache key by userId?",
+      "Cross-tenant cache bleed: a bare key let one user's value satisfy another's lookup. Namespacing scopes every entry to its owner."
+    );
+  });
+  await wait(1400);
+  await ev(() => {
+    showTitle(
+      '<div class="sub" style="color:var(--ink);font-weight:700">The reviewer asks. The agent answers live. No context-switch.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+});
+await wait(1700);
+await ev(() => { hideAnswer(); hideText(); });
+
+// ============================================================
+// SCENE 15 — CTA card (2s)
 // ============================================================
 mark("cta");
-await step("s12", async () => {
+await step("s15", async () => {
   await ev(() => { hideTool(); hideShots(); });
   await wait(150);
   await ev(() => {

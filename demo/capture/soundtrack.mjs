@@ -4,12 +4,16 @@
  * Genre: 1980s synthwave / outrun. Key: A minor. BPM: ~124.9 (drop lands exactly on reveal).
  * Progression: Am - F - C - G (i-VI-III-VII), 4-bar loop.
  *
- * Arc:
+ * Arc (times track the marks in promo.mjs; CTA now lands ~53s after the
+ * two-pane / review-order / live-Q&A feature scenes were added):
  *   HOOK  (0 → ~11.8s)  : moody minor pad + LGTM impact hit
  *   BUILD (~11.8 → 15.3s): riser sweep
  *   DROP  (15.3s)        : full synthwave kit kicks in
- *   FEATURES (15.3 → 43.2s): driving groove
- *   CTA   (43.2s → end)  : tonic resolve, fade out
+ *   FEATURES (15.3 → ~53s): driving groove (kick/bass/arp keyed off the `cta`
+ *                           mark, so it auto-extends to cover the new scenes),
+ *                           with melodic one-shot accents on each feature beat
+ *                           (twopane, revorder, qa-type, qa-answer)
+ *   CTA   (~53s → end)   : tonic resolve, fade out
  *
  * All rhythmic layers use aeval filter (sample-accurate, variable support).
  * One-shot hits use sine/noise + adelay (few nodes, no arg-length problem).
@@ -355,6 +359,60 @@ const click = [
   `[1:a]atrim=0.28:0.50,asetpts=PTS-STARTPTS,aformat=sample_rates=44100:channel_layouts=stereo,volume=1.0,${adelay(clickT2)}[click_hit]`,
 ];
 
+// ── NEW-FEATURE SCENE ACCENTS ─────────────────────────────────────────────────
+// The driving groove (kick/bass/arp, keyed off the `cta` mark) already underscores
+// scenes 12–14, but each new feature beat also gets a short melodic accent so the
+// cut lands musically — mirroring the stamp/glitch/cta one-shot construction.
+
+// TWO-PANE REVEAL: an open-fifth synth swell (A + E) that "opens up" like the
+// second pane sliding in. Soft attack, gentle tail.
+const twopaneT = t["twopane"] ?? (ctaT2 - 11);
+const twopane = [
+  `sine=frequency=220.0:duration=0.9000[tp_a]`,
+  `sine=frequency=330.0:duration=0.9000[tp_e]`,
+  `[tp_a]volume=0.30[tp_av]`, `[tp_e]volume=0.20[tp_ev]`,
+  `[tp_av][tp_ev]amix=inputs=2:normalize=0[tp_mix]`,
+  `[tp_mix]afade=t=in:st=0:d=0.18,afade=t=out:st=0.45:d=0.45[tp_shaped]`,
+  `[tp_shaped]${adelay(twopaneT)}[twopane_hit]`,
+];
+
+// REVIEW-ORDER OVERRIDE: a rising two-note "rank shuffle" gesture (C→E) that
+// resolves up, evoking a reorder. Lands on the revorder mark.
+const revorderT = t["revorder"] ?? (ctaT2 - 7);
+const revorder = [
+  `sine=frequency=523.25:duration=0.2200[ro_1]`,
+  `[ro_1]afade=t=in:st=0:d=0.01,afade=t=out:st=0.12:d=0.10[ro_1s]`,
+  `[ro_1s]volume=0.26[ro_1v]`,
+  `sine=frequency=659.25:duration=0.2600[ro_2]`,
+  `[ro_2]afade=t=in:st=0:d=0.01,afade=t=out:st=0.14:d=0.12[ro_2s]`,
+  `[ro_2s]volume=0.30,${adelay(0.16)}[ro_2v]`,
+  `[ro_1v][ro_2v]amix=inputs=2:normalize=0[ro_mix]`,
+  `[ro_mix]${adelay(revorderT)}[revorder_hit]`,
+];
+
+// Q&A TYPE: a crisp high blip when the reviewer's question is typed in.
+const qaTypeT = t["qa-type"] ?? (ctaT2 - 4);
+const qaType = [
+  `sine=frequency=1760.0:duration=0.0900[qt_r]`,
+  `[qt_r]afade=t=in:st=0:d=0.004,afade=t=out:st=0.05:d=0.04[qt_s]`,
+  `[qt_s]volume=0.18[qt_v]`,
+  `[qt_v]${adelay(qaTypeT)}[qatype_hit]`,
+];
+
+// Q&A ANSWER: a warm two-note confirm chime (E→A, resolving up an octave) when
+// the agent's live answer bubble appears.
+const qaAnswerT = t["qa-answer"] ?? (ctaT2 - 2.5);
+const qaAnswer = [
+  `sine=frequency=659.25:duration=0.3000[qa_1]`,
+  `[qa_1]afade=t=in:st=0:d=0.01,afade=t=out:st=0.16:d=0.14[qa_1s]`,
+  `[qa_1s]volume=0.24[qa_1v]`,
+  `sine=frequency=880.0:duration=0.4500[qa_2]`,
+  `[qa_2]afade=t=in:st=0:d=0.01,afade=t=out:st=0.28:d=0.17[qa_2s]`,
+  `[qa_2s]volume=0.28,${adelay(0.18)}[qa_2v]`,
+  `[qa_1v][qa_2v]amix=inputs=2:normalize=0[qa_mix]`,
+  `[qa_mix]${adelay(qaAnswerT)}[qaanswer_hit]`,
+];
+
 // ── Build aeval filter nodes ──────────────────────────────────────────────────
 // aeval filter: takes a continuous stereo stream and applies per-sample expressions.
 // We pipe the anullsrc through aeval for each layer, then amix all.
@@ -381,8 +439,10 @@ for (const { label, exprL, exprR } of aLayers) {
 }
 
 // One-shot nodes
-filterParts.push(...stamp, ...glitch, ...cta, ...click);
-mixLabels.push("[stamp_hit]", "[glitch_hit]", "[cta_hit]", "[click_hit]");
+filterParts.push(...stamp, ...glitch, ...cta, ...click,
+  ...twopane, ...revorder, ...qaType, ...qaAnswer);
+mixLabels.push("[stamp_hit]", "[glitch_hit]", "[cta_hit]", "[click_hit]",
+  "[twopane_hit]", "[revorder_hit]", "[qatype_hit]", "[qaanswer_hit]");
 
 const nMix = mixLabels.length;
 filterParts.push(
@@ -401,7 +461,7 @@ const filterComplex = filterParts.join(";\n");
 const filterPath = resolve(outDir, "audio-filter.txt");
 writeFileSync(filterPath, filterComplex);
 console.log(`Filter written to: ${filterPath}`);
-console.log(`Mix layers: ${nMix} (${aLayers.length} aevalsrc + 3 one-shot)`);
+console.log(`Mix layers: ${nMix} (${aLayers.length} aevalsrc + ${nMix - aLayers.length} one-shot)`);
 
 // ── Step 2b: Synthesize audio ─────────────────────────────────────────────────
 console.log("\n=== Step 2b: Synthesize audio ===");

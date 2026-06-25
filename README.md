@@ -55,9 +55,10 @@ map. Pick a file, read its intent, scroll its diff; the rail keeps your place.
 
 Every page leads with the **measured** surface area — computed from the diff and
 un-gameable: a vitals strip (files, ±lines, hunks, intent coverage, max cyclomatic
-complexity, downstream dependents) above a one-line **verdict** that names the
-complexity hotspots and flags when code changed but tests didn't, so you know
-where to look before you scroll. The **claimed** side is the author's risk ledger
+complexity, downstream dependents) above a one-line **verdict** that sizes the
+change set by churn (with a bit of personality), names the complexity hotspots,
+and flags when code changed but tests didn't, so you know where to look before
+you scroll. The **claimed** side is the author's risk ledger
 — _assumption → if false → how you'd know_ — and it sits right beside the measured
 change map. When the two disagree, you see it immediately.
 

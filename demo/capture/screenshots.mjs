@@ -76,16 +76,19 @@ try {
 }
 
 // ── Shot 4: visual-summary.png ────────────────────────────────────────────────
+// Two-pane rework: charts now live in the "Deeper analysis" <details class="deeper">
+// (ships open). The container is .deeper-grid; the old section.visuals / details.band
+// / summary.band-head are gone.
 try {
-  const el = page.locator("section.visuals");
+  // Make sure the details is open (it ships open, but be defensive).
+  await page.evaluate(() => {
+    const d = document.querySelector("details.deeper");
+    if (d) d.open = true;
+  });
+  await page.waitForTimeout(300);
+  const el = page.locator(".deeper-grid");
   await el.scrollIntoViewIfNeeded();
   await page.waitForTimeout(500);
-  // Ensure the details is open
-  const isOpen = await el.locator("details.band").getAttribute("open");
-  if (isOpen === null) {
-    await el.locator("summary.band-head").click();
-    await page.waitForTimeout(400);
-  }
   await el.screenshot({ path: resolve(outDir, "visual-summary.png") });
   log("visual-summary.png", "ok");
 } catch (err) {
@@ -93,19 +96,14 @@ try {
 }
 
 // ── Shot 5: diagrams.png ──────────────────────────────────────────────────────
+// Two-pane rework: diagrams render as inline mermaid SVG inside .diagram-grid;
+// the old section.diagrams wrapper is gone.
 try {
-  const el = page.locator("section.diagrams");
+  // Wait for mermaid to have rendered the diagram SVGs.
+  await page.waitForSelector("section.diagram.zoomable svg", { timeout: 6000 }).catch(() => {});
+  const el = page.locator(".diagram-grid");
   await el.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(400);
-  // Ensure the details is open
-  const isOpen = await el.locator("details.band").getAttribute("open");
-  if (isOpen === null) {
-    await el.locator("summary.band-head").click();
-    await page.waitForTimeout(400);
-  }
-  // Wait for mermaid SVG
-  await page.waitForSelector("section.diagram svg", { timeout: 5000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(600);
   await el.screenshot({ path: resolve(outDir, "diagrams.png") });
   log("diagrams.png", "ok");
 } catch (err) {
@@ -181,6 +179,105 @@ try {
   log("review-comment.png", "ok");
 } catch (err) {
   log("review-comment.png", "fail", err.message);
+}
+
+// ── Shot 10: review-order.png ─────────────────────────────────────────────────
+// The author-set review order override: the file list runs in the order the author
+// chose ("in author-set order · measured ranks shown") while each file head still
+// carries its measured rank ("measured #N") so the override stays auditable.
+try {
+  // Reset to paper theme for legibility.
+  await setTheme("paper").catch(() => {});
+  await page.waitForTimeout(200);
+
+  // Collapse the file <details> and clear any leftover comment text so the heads
+  // stack tightly — the author-set order across multiple rows (each with its
+  // contradicting "measured #N" badge) is the whole point of this shot.
+  await page.evaluate(() => {
+    document.querySelectorAll("section.diffs details.file").forEach((d) => {
+      d.open = false;
+    });
+    document.querySelectorAll("section.diffs .cinput").forEach((t) => {
+      t.value = "";
+    });
+  });
+  await page.waitForTimeout(300);
+
+  // Frame the top of the diffs section: the override eyebrow + the first file heads
+  // (each with its #N review rank and dashed "measured #N" badge).
+  const eyebrow = page.locator("section.diffs .section-eyebrow").first();
+  await eyebrow.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  // Nudge so the eyebrow isn't pinned under the sticky toolbar.
+  await page.evaluate(() => window.scrollBy({ top: -90, behavior: "instant" }));
+  await page.waitForTimeout(300);
+
+  // Capture a region: the eyebrow line plus the first several file heads, clipped to
+  // the main content column so the override + measured badges are legible.
+  const box = await page.evaluate(() => {
+    const eb = document.querySelector("section.diffs .section-eyebrow");
+    const heads = document.querySelectorAll("section.diffs summary.file-head");
+    if (!eb || heads.length < 5) return null;
+    const top = eb.getBoundingClientRect();
+    const last = heads[4].getBoundingClientRect();
+    const left = Math.min(top.left, last.left) - 12;
+    const right = Math.max(top.right, last.right) + 12;
+    return {
+      x: Math.max(0, left),
+      y: Math.max(0, top.top - 10),
+      width: right - left,
+      height: last.bottom - top.top + 22,
+    };
+  });
+  if (box && box.width > 0 && box.height > 0) {
+    await page.screenshot({ path: resolve(outDir, "review-order.png"), clip: box });
+  } else {
+    // Fallback: screenshot the diffs section itself.
+    await page.locator("section.diffs").screenshot({ path: resolve(outDir, "review-order.png") });
+  }
+  log("review-order.png", "ok");
+} catch (err) {
+  log("review-order.png", "fail", err.message);
+}
+
+// ── Shot 11: live-qa.png ──────────────────────────────────────────────────────
+// The ask-the-agent / reviewer Q&A panel: type a representative overall question,
+// which assembles into the copy-paste prompt for the agent.
+try {
+  const feedbackEl = page.locator("section.review-feedback");
+  await feedbackEl.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+
+  // The "Overall question" box is the second .fb-general-input (data-akind="question").
+  const qInput = page.locator('.fb-general-input[data-akind="question"]').first();
+  await qInput.scrollIntoViewIfNeeded();
+  await qInput.click();
+  await qInput.fill(
+    "Why namespace cache keys by tenant id rather than scoping a separate store per tenant?"
+  );
+  await page.waitForTimeout(700);
+
+  await feedbackEl.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  await feedbackEl.screenshot({ path: resolve(outDir, "live-qa.png") });
+  log("live-qa.png", "ok");
+} catch (err) {
+  log("live-qa.png", "fail", err.message);
+}
+
+// ── Shot 12: two-pane.png ─────────────────────────────────────────────────────
+// Establishing shot of the new diff-centric two-pane shell (file rail + main column).
+try {
+  // Reset to paper theme and scroll to the very top.
+  await setTheme("paper").catch(() => {});
+  await page.waitForTimeout(200);
+  await scrollTop();
+  await page.waitForSelector(".shell", { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: resolve(outDir, "two-pane.png"), fullPage: false });
+  log("two-pane.png", "ok");
+} catch (err) {
+  log("two-pane.png", "fail", err.message);
 }
 
 await browser.close();

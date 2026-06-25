@@ -40,13 +40,25 @@ review-intent
 
 ## What you get
 
+### A diff-centric, two-pane review page
+
+The whole change set in one self-contained page: a **file rail** on the left —
+every changed file ranked by reach × churn — beside a **main column** that leads
+with the title, the author's summary, the measured vitals strip, and the change
+map. Pick a file, read its intent, scroll its diff; the rail keeps your place.
+
+<p align="center">
+  <img src="docs/media/two-pane.png" alt="The two-pane review page: ranked file rail beside the main diff-and-intent column" width="100%">
+</p>
+
 ### Claimed vs. measured, side by side
 
 Every page leads with the **measured** surface area — computed from the diff and
 un-gameable: a vitals strip (files, ±lines, hunks, intent coverage, max cyclomatic
-complexity, downstream dependents) above a one-line **verdict** that names the
-complexity hotspots and flags when code changed but tests didn't, so you know
-where to look before you scroll. The **claimed** side is the author's risk ledger
+complexity, downstream dependents) above a one-line **verdict** that sizes the
+change set by churn (with a bit of personality), names the complexity hotspots,
+and flags when code changed but tests didn't, so you know where to look before
+you scroll. The **claimed** side is the author's risk ledger
 — _assumption → if false → how you'd know_ — and it sits right beside the measured
 change map. When the two disagree, you see it immediately.
 
@@ -88,6 +100,18 @@ first — so your attention lands where it matters instead of top-to-bottom.
   <img src="docs/media/guided-tour.png" alt="Guided review tour" width="100%">
 </p>
 
+### Author-set review order, measurement kept honest
+
+By default files sort by measured reach × churn, but the author can pin a custom
+review order — and the override stays auditable: the list runs in the author's
+order while every file head still shows where **measurement** ranked it
+(`measured #N`). When an author pushes a high-risk file down the list, the
+dashed measured badge calls it out instead of hiding it.
+
+<p align="center">
+  <img src="docs/media/review-order.png" alt="Files in author-set review order, each file head showing its contradicting measured rank" width="100%">
+</p>
+
 ### Comment and question, straight back to the agent
 
 Leave a **comment** (💬) or raise a **question** (❓) on any hunk or file. Both
@@ -114,6 +138,14 @@ answer appears under your question and the review stays open until you decide. T
 human stays in the loop without ever pasting a prompt. Close the tab without
 deciding and the tool returns a no-decision result (detected by a liveness
 heartbeat) rather than hanging the agent — an open tab can take as long as you need.
+
+<p align="center">
+  <img src="docs/media/live-qa.png" alt="Asking the agent a question inline; questions assemble into the prompt, listed first" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/media/features.gif" alt="The two-pane page, author-set review order with measured ranks kept honest, and inline live Q&amp;A — in motion" width="100%">
+</p>
 
 The two tools let the agent drive a single conversation: each call blocks until the
 next thing you do, so it answers your questions as they come and unblocks for good

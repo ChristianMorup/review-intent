@@ -1,0 +1,511 @@
+import { chromium } from "playwright";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname, resolve } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const stageUrl = pathToFileURL(resolve(here, "promo.html")).href;
+const outDir = resolve(here, "../out/promo-raw");
+mkdirSync(outDir, { recursive: true });
+
+const VIEWPORT = { width: 1920, height: 1080 };
+
+const browser = await chromium.launch();
+const context = await browser.newContext({
+  viewport: VIEWPORT,
+  deviceScaleFactor: 1,
+  recordVideo: { dir: outDir, size: VIEWPORT },
+});
+const page = await context.newPage();
+
+// Beat-timestamp instrumentation — T0 ≈ webm t=0 (page created, recording starts)
+const T0 = Date.now();
+const _beats = [];
+function mark(label) {
+  const ms = Date.now() - T0;
+  _beats.push({ label, ms });
+  console.log(`[beat] ${label} @ ${ms}ms`);
+}
+
+const wait = (ms) => page.waitForTimeout(ms);
+const ev = (fn, arg) => page.evaluate(fn, arg);
+const tool = () => page.frameLocator("#tool");
+const frame = () => page.frame({ url: /review\.html/ });
+
+// run an optional step; never let one missing selector abort the take
+async function step(label, fn) {
+  try { await fn(); }
+  catch (e) { console.warn("[step:" + label + "] skipped:", e.message); }
+}
+
+// Click an element INSIDE the live iframe by dispatching a real DOM click.
+// Coordinate-based Playwright clicks miss because the parent #device is
+// CSS-transformed; a direct .click() on the resolved node is reliable and the
+// camera still sees the resulting UI change. We add a brief CSS press highlight.
+async function clickInTool(label, selector) {
+  await step(label, async () => {
+    const ok = await frame().evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      el.classList.add("__promo-press");
+      el.click();
+      setTimeout(() => el.classList && el.classList.remove("__promo-press"), 260);
+      return true;
+    }, selector);
+    if (!ok) console.warn("[step:" + label + "] selector not found:", selector);
+  });
+}
+
+// Scroll the live iframe so a given selector sits near the top of the device
+// viewport (with an optional margin). Falls back to a numeric top if the
+// selector is absent. Used by the back-half feature scenes that frame elements
+// deep in the page (charts, file spine, the Q&A panel).
+async function scrollToInTool(label, selector, margin = 80) {
+  await step(label, async () => {
+    const did = await frame().evaluate(({ sel, m }) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      const top = el.getBoundingClientRect().top + window.scrollY - m;
+      window.scrollTo({ top: Math.max(0, top), behavior: "instant" });
+      return true;
+    }, { sel: selector, m: margin });
+    if (!did) console.warn("[step:" + label + "] scroll selector not found:", selector);
+  });
+}
+
+// Type text into a field inside the live iframe with a real input event so the
+// page's handlers fire, then return the field's on-screen rect (device coords).
+async function typeInTool(label, selector, text) {
+  await step(label, async () => {
+    const ok = await frame().evaluate(({ sel, txt }) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      el.focus();
+      el.value = txt;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }, { sel: selector, txt: text });
+    if (!ok) console.warn("[step:" + label + "] type selector not found:", selector);
+  });
+}
+
+console.log("goto", stageUrl);
+await page.goto(stageUrl, { waitUntil: "load" });
+// wait for stage hooks
+await page.waitForFunction(() => window.__promoReady === true, null, { timeout: 15000 });
+// wait for the live tool iframe to render its toolbar
+await step("iframe-ready", async () => {
+  await tool().locator(".tb-gear").waitFor({ state: "visible", timeout: 20000 });
+  console.log("iframe tool ready");
+});
+// pre-scroll the iframe to top
+await step("iframe-top", () => page.frame({ url: /review\.html/ })?.evaluate(() => window.scrollTo(0, 0)));
+
+// fade in from black handled by ffmpeg; small black hold at very start
+await wait(300);
+
+// ============================================================
+// SCENE 1 — 0:00  "Your agent wrote the code. In seconds." (4s)
+// ============================================================
+mark("s1");
+await step("s1", async () => {
+  await ev(() => {
+    setBg("radial-gradient(1200px 900px at 50% 40%, rgba(255,255,255,0.04), transparent 60%), #07090d");
+    showTitle(
+      '<div class="big mono dim">Your agent wrote the code.</div>' +
+      '<div class="big mono line2">In seconds.<span class="blink on accent">_</span></div>'
+    );
+  });
+});
+await wait(3700);
+
+// ============================================================
+// SCENE 2 — 0:04  "You have 90 seconds to approve it." (3.5s)
+// ============================================================
+mark("bottleneck");
+await step("s2", async () => {
+  await ev(() => {
+    hideText();
+  });
+  await wait(420);
+  await ev(() => {
+    showTitle(
+      '<div class="big">Now you\'re</div>' +
+      '<div class="big line2">the <span class="accent">bottleneck</span>.</div>'
+    );
+    showApprove();
+    showCursor(940, 540);
+  });
+  // cursor creeps toward the approve button
+  await wait(500);
+  await ev(() => moveCursor(1548, 838, 2400)); // land ON the Approve button (centre ~1548,840)
+});
+await wait(2300);
+
+// ============================================================
+// SCENE 3 — 0:07.5  "LGTM" — click, stamp, glitch (3s)
+// ============================================================
+mark("s3");
+await step("s3", async () => {
+  await ev(() => { hideText(); showDiffBg(false); });
+  await wait(180);
+  await ev(() => { moveCursor(1548, 834, 220); }); // tiny settle, stays ON the button
+  await wait(260);
+  mark("approve-click");
+  await ev(() => { pressApprove(); });
+  await wait(160);
+  await ev(() => {
+    hideApprove(); hideCursor();
+  });
+  await wait(120);
+  mark("lgtm-stamp");
+  await ev(() => { showStamp(); shake(); });
+  await wait(700);
+  mark("glitch");
+  await ev(() => { glitch(); });
+});
+await wait(1700);
+
+// ============================================================
+// SCENE 4 — 0:10.5  "The diff shows WHAT changed..." (3.5s)
+// ============================================================
+mark("problem");
+await step("s4", async () => {
+  await ev(() => {
+    hideStamp(); hideText();
+    showDiffBg(true); // drift
+  });
+  await wait(420);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">The diff shows <span class="accent">WHAT</span> changed.</div>' +
+      '<div class="mid line2 dim">Not whether the reasoning was sound.</div>'
+    );
+  });
+});
+await wait(3050);
+
+// ============================================================
+// SCENE 5 — 0:14  Wordmark "review-intent" (3s)
+// ============================================================
+mark("reveal");
+await step("s5", async () => {
+  await ev(() => { hideText(); hideDiffBg(); });
+  await wait(420);
+  await ev(() => {
+    setBg("radial-gradient(1100px 800px at 50% 38%, rgba(94,230,168,0.12), transparent 62%), #06080c");
+    showTitle(
+      '<div class="huge"><span class="dim">review</span><span class="accent">-intent</span></div>' +
+      '<div class="sub">See the change. Judge the intent.</div>'
+    );
+  });
+});
+await wait(2900);
+
+// ============================================================
+// SCENE 6 — 0:17  LIVE tool, hero + vitals, gentle auto-scroll (4s)
+// ============================================================
+mark("tool-in");
+await step("s6", async () => {
+  await ev(() => { hideText(); });
+  // ensure iframe at top
+  await step("s6-top", () => page.frame({ url: /review\.html/ })?.evaluate(() => window.scrollTo(0, 0)));
+  await ev(() => {
+    setBg("radial-gradient(1200px 900px at 78% 12%, rgba(94,230,168,0.08), transparent 60%), #07090d");
+    showTool({ scale: 1, tx: 0, ty: 0 });
+  });
+  await wait(900);
+  await ev(() => {
+    showTitle(
+      '<div class="mid mono">git diff <span class="accent">→</span> one interactive review page.</div>' +
+      '<div class="sub">No LLM. No API key. No token cost.</div>',
+      { bottom: true }
+    );
+  });
+  await wait(1100);
+  await ev(() => hideText());
+  // gentle auto-scroll of the real page
+  await step("s6-scroll", () =>
+    page.frame({ url: /review\.html/ })?.evaluate(() => window.scrollTo({ top: 360, behavior: "smooth" }))
+  );
+});
+await wait(1900);
+
+// ============================================================
+// SCENE 7 — 0:21  scorecard.png MEASURED, ken-burns to badges (4s)
+// ============================================================
+mark("scorecard");
+await step("s7", async () => {
+  await ev(() => { hideTool(); });
+  await wait(120);
+  // scorecard-crop is 982x545 (content only, no empty bottom). Scale ~1.55 => ~1522x845,
+  // filling the horizontal frame with comfortable margins, no top clipping, no side voids.
+  // Gentle ken-burns push-in; caption lives in a bottom scrim band clear of the card.
+  await ev(() => {
+    showShot("assets/scorecard-crop.png", {
+      fromScale: 1.42, fromTx: 0, fromTy: -120,
+      scale: 1.50, tx: 0, ty: -120, duration: 5200
+    });
+    showTitle(
+      '<div class="mid"><span class="chip measured">MEASURED</span> straight from the diff.</div>' +
+      '<div class="sub">Un-gameable. <span class="accent">Touches auth · Touches dependencies.</span></div>',
+      { bottom: true, scrim: true }
+    );
+  });
+});
+await wait(3900);
+
+// ============================================================
+// SCENE 8 — 0:25  risk-ledger.png CLAIMED, slide-in split feel (4s)
+// ============================================================
+mark("claimed");
+await step("s8", async () => {
+  await ev(() => { hideText(); });
+  await wait(150);
+  await ev(() => {
+    // genuine split-screen, BOTH cards fully inside the frame (no edge clipping):
+    // scorecard-crop 982x545 @0.70 => 687x382 centred x=470 (left 127, right 813);
+    // risk-ledger 982x1166 @0.70 => 687x816 centred x=1390 (left 1046, right 1733).
+    showShot("assets/scorecard-crop.png", { fromScale: 0.60, fromTx: -480, fromTy: 160,
+      scale: 0.56, tx: -480, ty: 160, duration: 900 });
+    showShot("risk-ledger.png", {
+      fromScale: 0.52, fromTx: 1300, fromTy: 160,
+      scale: 0.56, tx: 480, ty: 160, duration: 1000
+    });
+  });
+  await wait(1100);
+  await ev(() => {
+    showTitle(
+      '<div class="mid"><span class="chip claimed">CLAIMED</span> right beside it.</div>' +
+      '<div class="sub">When they disagree, you see it.</div>',
+      { top: true, scrim: true }
+    );
+  });
+});
+await wait(2300);
+
+// ============================================================
+// SCENE 9 — 0:29  LIVE deeper-analysis charts (.deeper-grid), gentle push (3s)
+// ============================================================
+// Two-pane rework: the old static section.visuals (five charts) is gone. The
+// new charts live in the always-open <details class="deeper"> as .deeper-grid
+// (.viz-treemap / .viz-scatter / .viz-diffmass / .viz-complexity). We frame the
+// real iframe scrolled to that grid instead of the stale visual-summary crop.
+mark("charts");
+await step("s9", async () => {
+  await ev(() => { hideText(); hideShots(); });
+  await wait(150);
+  // .deeper-grid sits at ~y2234 in the page; scroll it under the top of the
+  // device and push the camera in a touch so the four hand-drawn SVG charts read.
+  await scrollToInTool("s9-scroll", ".deeper-grid", 110);
+  await ev(() => { showTool({ scale: 1.12, ty: 30 }); });
+  await wait(500);
+  await ev(() => {
+    showTitle(
+      '<div class="mid" style="font-size:46px">Four charts. Hand-drawn SVG. Zero deps.</div>' +
+      '<div class="sub"><span class="accent">Treemap, risk-vs-churn, diff mass, complexity.</span></div>',
+      { top: true, scrim: true }
+    );
+  });
+});
+await wait(2850);
+
+// ============================================================
+// SCENE 10 — 0:32  LIVE guided tour, .tb-tour + .tour-next x2 (4s)
+// ============================================================
+mark("tour-start-scene");
+await step("s10", async () => {
+  await ev(() => { hideText(); hideShots(); });
+  await wait(150);
+  await step("s10-top", () => page.frame({ url: /review\.html/ })?.evaluate(() => window.scrollTo(0, 0)));
+  await ev(() => { showTool({ scale: 1 }); });
+  await wait(700);
+  await ev(() => {
+    showTitle('<div class="mid">One click. <span class="accent">Reviewed in priority order.</span></div>', { bottom: true });
+  });
+  await wait(700);
+  mark("tour-start");
+  await clickInTool("tour-start", ".tb-tour");
+  await wait(1100);
+  await ev(() => hideText());
+  mark("tour-next-1");
+  await clickInTool("tour-next-1", ".tour-next");
+  await wait(950);
+  mark("tour-next-2");
+  await clickInTool("tour-next-2", ".tour-next");
+  await wait(900);
+  await clickInTool("tour-exit", ".tour-exit");
+});
+await wait(500);
+
+// ============================================================
+// SCENE 11 — 0:36  LIVE theme switch synthwave -> dark (3s)
+// ============================================================
+mark("theme-scene");
+await step("s11", async () => {
+  // scroll the live page onto the diff and zoom the camera in a touch so the recolor
+  // is unmistakable and the diff text is readable when the theme morphs.
+  await step("s11-scroll", () =>
+    page.frame({ url: /review\.html/ })?.evaluate(() => window.scrollTo({ top: 1600, behavior: "instant" }))
+  );
+  await ev(() => { showTool({ scale: 1.16, ty: 40 }); });
+  await wait(300);
+  await ev(() => {
+    showTitle('<div class="mid">14 themes. Live.</div><div class="sub">Same un-gameable truth.</div>', { bottom: true, scrim: true });
+  });
+  await wait(600);
+  await ev(() => hideText());
+  // switch to synthwave and DWELL — this is the strongest recolor, and the long hold
+  // guarantees the evenly-spaced frame grab lands on a clearly themed page.
+  await clickInTool("gear-1", ".tb-gear");
+  await wait(380);
+  mark("theme-synth");
+  await clickInTool("theme-synth", '.theme-opt[data-theme-id="synthwave"]');
+  await wait(1500);
+  // then morph to dark for the second palette beat (and to seed the dark CTA card)
+  await clickInTool("gear-2", ".tb-gear");
+  await wait(380);
+  mark("theme-dark");
+  await clickInTool("theme-dark", '.theme-opt[data-theme-id="dark"]');
+  await wait(900);
+});
+
+// ============================================================
+// SCENE 12 — NEW  "Meet the new review page" — two-pane shell (4s)
+// ============================================================
+// Establishing beat on the redesigned two-pane layout: a sticky review-order
+// rail on the left, the deep-dive column on the right. Scroll to the very top so
+// both panes are in frame, pull the camera back to a clean 1:1 so the whole
+// shell reads.
+mark("twopane");
+await step("s12-twopane", async () => {
+  await ev(() => { hideText(); hideShots(); });
+  await wait(120);
+  await scrollToInTool("s12-top", ".shell", 24);
+  await ev(() => { showTool({ scale: 1.0, ty: 0 }); });
+  await wait(700);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Meet the new review page.</div>' +
+      '<div class="sub"><span class="accent">Two panes</span> — a review-order rail beside the deep dive.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+});
+await wait(2500);
+
+// ============================================================
+// SCENE 13 — NEW  Review-order override — file spine + measured #N (4.5s)
+// ============================================================
+// The left rail's file spine shows the AUTHOR-SET review order (1..7) while each
+// row still carries its MEASURED rank badge (.file-rank-measured). When the
+// author sinks a risky file, its measured #1 stays visible — the override is
+// auditable, not hidden. Frame the rail and push in on the spine.
+mark("revorder");
+await step("s13-revorder", async () => {
+  await ev(() => { hideText(); });
+  await scrollToInTool("s13-top", ".spine", 60);
+  // Nudge the camera left+in so the rail's spine fills frame (rail sits left of
+  // centre in the device); the measured #N badges become legible.
+  await ev(() => { showTool({ scale: 1.42, tx: 360, ty: 150 }); });
+  await wait(800);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Author sets the <span class="accent">review order</span>.</div>' +
+      '<div class="sub">The measured rank stays visible — sink a risky file and the override is auditable.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+  await wait(1100);
+  mark("revorder-badge");
+  // brief press highlight on a measured-rank badge to draw the eye to "measured #1"
+  await clickInTool("revorder-badge", ".file-rank-measured");
+});
+await wait(1400);
+
+// ============================================================
+// SCENE 14 — NEW  Live reviewer Q&A over MCP (5s)
+// ============================================================
+// The ask-the-agent panel (.review-feedback) lets a reviewer ask a question
+// right on the page; over MCP the agent answers live — no context switch back to
+// the chat. Scroll to the panel, type a real question into .fb-general-input,
+// then reveal a scripted answer bubble overlay (stage-side, deterministic).
+mark("qa-scene");
+await step("s14-qa", async () => {
+  await ev(() => { hideText(); hideAnswer(); });
+  await scrollToInTool("s14-top", ".review-feedback", 90);
+  await ev(() => { showTool({ scale: 1.06, ty: 10 }); });
+  await wait(600);
+  await ev(() => {
+    showTitle(
+      '<div class="mid">Ask the agent — <span class="accent">on the page</span>.</div>',
+      { top: true, scrim: true }
+    );
+  });
+  await wait(500);
+  mark("qa-type");
+  await typeInTool("qa-type", ".fb-general-input",
+    "Why namespace the cache key by userId?");
+  await wait(900);
+  await ev(() => hideText());
+  mark("qa-answer");
+  // scripted answer bubble (stage overlay) — agent replies live over MCP
+  await ev(() => {
+    showAnswer(
+      "Q: Why namespace the cache key by userId?",
+      "Cross-tenant cache bleed: a bare key let one user's value satisfy another's lookup. Namespacing scopes every entry to its owner."
+    );
+  });
+  await wait(1400);
+  await ev(() => {
+    showTitle(
+      '<div class="sub" style="color:var(--ink);font-weight:700">The reviewer asks. The agent answers live. No context-switch.</div>',
+      { bottom: true, scrim: true }
+    );
+  });
+});
+await wait(1700);
+await ev(() => { hideAnswer(); hideText(); });
+
+// ============================================================
+// SCENE 15 — CTA card (2s)
+// ============================================================
+mark("cta");
+await step("s15", async () => {
+  await ev(() => { hideTool(); hideShots(); });
+  await wait(150);
+  await ev(() => {
+    setBg("radial-gradient(1100px 800px at 50% 40%, rgba(94,230,168,0.10), transparent 62%), #0a0d12");
+    showTitle(
+      '<div class="sub" style="font-size:30px;margin-top:0;color:var(--muted)">review-intent</div>' +
+      '<div class="cmd mono accent" style="margin-top:14px" id="ctacmd">npx @christianmorup/review-intent</div>' +
+      '<div class="sub">MIT · open source</div>' +
+      '<div class="sub" style="color:var(--ink);font-weight:700;margin-top:34px">Stop rubber-stamping AI code.<span class="blink on accent">_</span></div>'
+    );
+  });
+  await wait(650);
+  // underline wipe under the command
+  await ev(() => {
+    var el = document.getElementById("ctacmd");
+    var r = el.getBoundingClientRect();
+    showUnderline(r.left, r.bottom + 14, r.width);
+  });
+});
+await wait(2600);
+
+// final hold (fade-out applied by ffmpeg)
+await wait(400);
+mark("end");
+
+console.log("closing context to flush video...");
+const video = page.video();
+await context.close();
+await browser.close();
+const videoPath = video ? await video.path() : null;
+console.log("VIDEO_PATH=" + videoPath);
+
+// Write beat timestamps for reproducible audio sync
+const marksPath = resolve(here, "../out/promo-marks.json");
+writeFileSync(marksPath, JSON.stringify({ videoPath, beats: _beats }, null, 2));
+console.log("MARKS_PATH=" + marksPath);

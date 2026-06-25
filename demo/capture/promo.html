@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>review-intent — promo stage</title>
+<style>
+  :root {
+    --accent: #5ee6a8;        /* one strong accent */
+    --accent-2: #b388ff;
+    --bg: #07090d;
+    --ink: #f4f7fb;
+    --muted: #8b95a6;
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Consolas", ui-monospace, monospace;
+    --sans: -apple-system, "Segoe UI", "Helvetica Neue", Arial, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+  #stage {
+    position: fixed; inset: 0; width: 1920px; height: 1080px;
+    overflow: hidden; background: var(--bg);
+    font-family: var(--sans); color: var(--ink);
+  }
+
+  /* Background wash that we can recolor */
+  #bg {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(1200px 800px at 70% 18%, rgba(94,230,168,0.10), transparent 60%),
+      radial-gradient(1000px 900px at 18% 85%, rgba(179,136,255,0.08), transparent 60%),
+      var(--bg);
+    transition: background 900ms cubic-bezier(.4,0,.2,1);
+  }
+  /* subtle film grain / vignette */
+  #vignette {
+    position: absolute; inset: 0; pointer-events: none;
+    box-shadow: inset 0 0 320px 60px rgba(0,0,0,0.65);
+  }
+
+  /* ---------------- TEXT LAYER ---------------- */
+  #textlayer {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; padding: 0 160px;
+    z-index: 40;
+    pointer-events: none;
+  }
+  #textlayer.tl-left { align-items: flex-start; text-align: left; padding-left: 180px; }
+  /* lower band for captions over the live tool — keeps the UI readable above */
+  #textlayer.tl-bottom { justify-content: flex-end; padding-bottom: 70px; }
+  #textlayer.tl-bottom #title {
+    background: linear-gradient(0deg, rgba(7,9,13,0.94) 0%, rgba(7,9,13,0.82) 60%, rgba(7,9,13,0) 100%);
+    padding: 34px 80px 30px; border-radius: 18px;
+  }
+  /* upper band for captions over montage artwork — keeps the charts clear below */
+  #textlayer.tl-top { justify-content: flex-start; padding-top: 70px; }
+  #textlayer.tl-top #title {
+    background: linear-gradient(180deg, rgba(7,9,13,0.94) 0%, rgba(7,9,13,0.82) 55%, rgba(7,9,13,0) 100%);
+    padding: 34px 80px 36px; border-radius: 18px;
+  }
+  #textlayer.tl-bottom.tl-scrim #title,
+  #textlayer.tl-top.tl-scrim #title { box-shadow: 0 0 18px 2px rgba(7,9,13,0.4); }
+  #title {
+    opacity: 0; transform: translateY(38px);
+    transition: opacity 700ms cubic-bezier(.2,.7,.2,1), transform 700ms cubic-bezier(.2,.7,.2,1);
+    will-change: opacity, transform;
+  }
+  #title.show { opacity: 1; transform: translateY(0); }
+
+  /* kinetic text style tokens used inside title html */
+  .big {
+    font-size: 96px; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em;
+    text-shadow: 0 8px 60px rgba(0,0,0,0.55);
+  }
+  .huge {
+    font-size: 150px; font-weight: 900; line-height: 0.98; letter-spacing: -0.03em;
+  }
+  .mid { font-size: 64px; font-weight: 700; line-height: 1.12; letter-spacing: -0.015em; }
+  /* CTA install command — sized to keep the full npx string on ONE line */
+  .cmd { font-size: 72px; font-weight: 800; line-height: 1.0; letter-spacing: -0.02em; white-space: nowrap; }
+  .sub { font-size: 40px; font-weight: 500; color: var(--muted); margin-top: 28px; letter-spacing: 0.01em; }
+  .mono { font-family: var(--mono); }
+  .accent { color: var(--accent); }
+  .accent2 { color: var(--accent-2); }
+  .dim { color: var(--muted); }
+  .kicker { font-size: 30px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); }
+  .line2 { margin-top: 18px; }
+  .blink { display: inline-block; width: 0.06em; }
+  .blink.on { animation: blink 1.05s steps(1) infinite; }
+  @keyframes blink { 0%,50%{opacity:1} 50.01%,100%{opacity:0} }
+
+  /* badge chips for measured/claimed framing */
+  .chip {
+    display: inline-block; font-family: var(--mono); font-size: 30px; font-weight: 700;
+    padding: 8px 20px; border-radius: 999px; margin: 0 8px;
+    border: 2px solid currentColor;
+  }
+  .chip.measured { color: var(--accent); }
+  .chip.claimed { color: var(--accent-2); }
+
+  /* ---------------- DEVICE (iframe) LAYER ---------------- */
+  #device {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 1680px; height: 1000px;
+    margin-left: -840px; margin-top: -500px;
+    border-radius: 18px;
+    background: #0d1117;
+    box-shadow: 0 60px 140px -30px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.06);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(60px) scale(0.96);
+    transition: opacity 800ms cubic-bezier(.2,.7,.2,1), transform 800ms cubic-bezier(.2,.7,.2,1);
+    z-index: 20;
+    will-change: transform, opacity;
+  }
+  #device.show { opacity: 1; }
+  .titlebar {
+    height: 46px; background: #161b22; display: flex; align-items: center;
+    padding: 0 18px; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .dot.r { background: #ff5f56; } .dot.y { background: #ffbd2e; } .dot.g { background: #27c93f; }
+  .tb-url {
+    margin-left: 18px; font-family: var(--mono); font-size: 18px; color: #6b7484;
+    background: #0d1117; border-radius: 8px; padding: 6px 18px; flex: 0 0 auto;
+  }
+  #tool {
+    width: 100%; height: calc(100% - 46px); border: 0; background: #fff; display: block;
+  }
+
+  /* ---------------- SCREENSHOT MONTAGE LAYER ---------------- */
+  #shots { position: absolute; inset: 0; z-index: 25; }
+  .shot {
+    position: absolute; top: 50%; left: 50%;
+    max-width: none; opacity: 0;
+    border-radius: 14px;
+    box-shadow: 0 50px 120px -28px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05);
+    transform: translate(-50%,-50%) scale(1);
+    transition: opacity 700ms cubic-bezier(.2,.7,.2,1), transform var(--kb,5000ms) cubic-bezier(.25,.1,.25,1);
+    will-change: transform, opacity;
+  }
+  .shot.show { opacity: 1; }
+
+  /* ---------------- OVERLAY FX ---------------- */
+  /* Approve button for scene 2/3 */
+  #approveBtn {
+    position: absolute; right: 220px; bottom: 200px; z-index: 45;
+    font-family: var(--sans); font-size: 34px; font-weight: 700;
+    color: #07120c; background: var(--accent);
+    padding: 20px 52px; border-radius: 12px;
+    box-shadow: 0 0 60px rgba(94,230,168,0.0);
+    opacity: 0; transform: scale(1);
+    transition: opacity 600ms ease, box-shadow 700ms ease, transform 150ms ease;
+  }
+  #approveBtn.show { opacity: 1; box-shadow: 0 0 70px rgba(94,230,168,0.45); }
+  #approveBtn.press { transform: scale(0.92); box-shadow: 0 0 30px rgba(94,230,168,0.7); }
+
+  /* fake cursor */
+  #cursor {
+    position: absolute; z-index: 60; width: 40px; height: 40px;
+    left: 960px; top: 540px; opacity: 0;
+    transition: opacity 500ms ease, left var(--cdur,1800ms) cubic-bezier(.4,0,.2,1), top var(--cdur,1800ms) cubic-bezier(.4,0,.2,1);
+    pointer-events: none;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));
+  }
+  #cursor.show { opacity: 1; }
+
+  /* LGTM stamp */
+  #stamp {
+    position: absolute; z-index: 55; top: 50%; left: 50%;
+    font-family: var(--mono); font-weight: 900; font-size: 200px; letter-spacing: 0.04em;
+    color: #ff4d4d; border: 12px solid #ff4d4d; padding: 18px 56px; border-radius: 18px;
+    transform: translate(-50%,-50%) rotate(-14deg) scale(2.6); opacity: 0;
+    text-shadow: 0 0 40px rgba(255,77,77,0.5);
+    box-shadow: 0 0 80px rgba(255,77,77,0.3);
+    transition: opacity 120ms ease, transform 220ms cubic-bezier(.2,1.4,.3,1);
+  }
+  #stamp.show { opacity: 0.96; transform: translate(-50%,-50%) rotate(-14deg) scale(1); }
+
+  /* blurred fake diff backdrop (scenes 3 & 4) */
+  #diffbg {
+    position: absolute; inset: 0; z-index: 10; opacity: 0;
+    transition: opacity 800ms ease;
+    filter: blur(5px) saturate(0.5);
+    padding: 80px 120px; font-family: var(--mono); font-size: 26px; line-height: 1.7;
+    color: #5a6573; overflow: hidden;
+  }
+  #diffbg.show { opacity: 0.5; }
+  #diffbg .add { color: #3a6b4f; } #diffbg .del { color: #6b3a3a; } #diffbg .ctx { color: #404857; }
+  #diffbg.drift { animation: drift 14s linear forwards; }
+  @keyframes drift { from { transform: translateY(0); } to { transform: translateY(-180px); } }
+
+  /* screen shake */
+  #stage.shake { animation: shake 380ms cubic-bezier(.36,.07,.19,.97); }
+  @keyframes shake {
+    10%,90%{transform:translate(-4px,2px)} 20%,80%{transform:translate(8px,-4px)}
+    30%,50%,70%{transform:translate(-12px,4px)} 40%,60%{transform:translate(12px,-2px)}
+  }
+  /* glitch flicker */
+  #stage.glitch { animation: glitch 220ms steps(2) 2; }
+  @keyframes glitch { 0%{filter:none} 50%{filter:hue-rotate(40deg) contrast(1.4) brightness(1.3)} 100%{filter:none} }
+
+  /* accent underline wipe for CTA */
+  #ctaUnderline {
+    position: absolute; z-index: 46; height: 8px; background: var(--accent); border-radius: 4px;
+    width: 0; opacity: 0; transition: width 700ms cubic-bezier(.4,0,.2,1), opacity 300ms ease;
+    box-shadow: 0 0 24px var(--accent);
+  }
+  #ctaUnderline.wipe { opacity: 1; }
+
+  /* ---------------- LIVE Q&A ANSWER BUBBLE (scene 14) ---------------- */
+  /* A stage-side scripted "agent answer" card that floats over the live Q&A
+     panel — deterministic so the recording is reproducible. The question line
+     reads back what was typed; the answer is the scripted MCP reply. */
+  #answer {
+    position: absolute; z-index: 48;
+    left: 50%; top: 50%;
+    width: 1040px; max-width: 86%;
+    transform: translate(-50%, -42%) translateY(28px) scale(0.97);
+    opacity: 0;
+    background: linear-gradient(180deg, rgba(16,22,30,0.98), rgba(11,15,21,0.98));
+    border: 1px solid rgba(94,230,168,0.35);
+    border-radius: 18px; padding: 30px 38px;
+    box-shadow: 0 50px 120px -28px rgba(0,0,0,0.85), 0 0 60px rgba(94,230,168,0.18);
+    text-align: left;
+    transition: opacity 520ms cubic-bezier(.2,.7,.2,1), transform 520ms cubic-bezier(.2,.7,.2,1);
+    will-change: opacity, transform;
+  }
+  #answer.show { opacity: 1; transform: translate(-50%, -42%) translateY(0) scale(1); }
+  #answer .ans-q {
+    font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--muted);
+    margin-bottom: 16px; letter-spacing: 0.01em;
+  }
+  #answer .ans-tag {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 22px; font-weight: 700; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 12px;
+  }
+  #answer .ans-tag::before {
+    content: ""; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 14px var(--accent);
+    animation: ansPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes ansPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+  #answer .ans-a {
+    font-size: 36px; font-weight: 600; line-height: 1.3; color: var(--ink);
+  }
+
+  /* generic flash-in fade for body */
+  #fadeblack {
+    position: absolute; inset: 0; z-index: 90; background: #000; opacity: 0;
+    transition: opacity 600ms ease; pointer-events: none;
+  }
+  #fadeblack.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+
+  <div id="diffbg"></div>
+
+  <div id="shots"></div>
+
+  <div id="device">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="tb-url">review.html — git diff main...HEAD</span>
+    </div>
+    <iframe id="tool" src="../widget-api/review.html"></iframe>
+  </div>
+
+  <div id="diffbg2"></div>
+
+  <div id="textlayer"><div id="title"></div></div>
+
+  <div id="approveBtn">✓ Approve</div>
+  <div id="ctaUnderline"></div>
+
+  <svg id="cursor" viewBox="0 0 24 24" fill="none">
+    <path d="M5 3l14 9-6 1 4 7-3 1-4-7-5 4z" fill="#fff" stroke="#111" stroke-width="1.2"/>
+  </svg>
+
+  <div id="stamp">LGTM</div>
+
+  <div id="answer">
+    <div class="ans-q"></div>
+    <div class="ans-tag">agent · live over MCP</div>
+    <div class="ans-a"></div>
+  </div>
+
+  <div id="vignette"></div>
+  <div id="fadeblack"></div>
+</div>
+
+<script>
+(function () {
+  var stage = document.getElementById("stage");
+  var bg = document.getElementById("bg");
+  var titleEl = document.getElementById("title");
+  var textlayer = document.getElementById("textlayer");
+  var device = document.getElementById("device");
+  var shots = document.getElementById("shots");
+  var approveBtn = document.getElementById("approveBtn");
+  var cursor = document.getElementById("cursor");
+  var stamp = document.getElementById("stamp");
+  var diffbg = document.getElementById("diffbg");
+  var underline = document.getElementById("ctaUnderline");
+  var answer = document.getElementById("answer");
+
+  var shotEls = {}; // cache by file
+
+  // ---------- TEXT ----------
+  window.showTitle = function (html, opts) {
+    opts = opts || {};
+    titleEl.classList.remove("show");
+    titleEl.innerHTML = html;
+    textlayer.classList.toggle("tl-left", !!opts.left);
+    textlayer.classList.toggle("tl-bottom", !!opts.bottom);
+    textlayer.classList.toggle("tl-top", !!opts.top);
+    textlayer.classList.toggle("tl-scrim", !!opts.scrim);
+    // force reflow then show
+    void titleEl.offsetWidth;
+    requestAnimationFrame(function () { titleEl.classList.add("show"); });
+  };
+  window.showCaption = window.showTitle; // same mechanism, caller styles via classes
+  window.hideText = function () { titleEl.classList.remove("show"); };
+
+  // ---------- DEVICE / IFRAME ----------
+  window.showTool = function (o) {
+    o = o || {};
+    var scale = o.scale == null ? 1 : o.scale;
+    var tx = o.tx || 0, ty = o.ty || 0;
+    device.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
+    device.classList.add("show");
+  };
+  window.hideTool = function () {
+    device.classList.remove("show");
+    device.style.transform = "translateY(60px) scale(0.96)";
+  };
+
+  // ---------- SCREENSHOT MONTAGE ----------
+  window.showShot = function (file, o) {
+    o = o || {};
+    var scale = o.scale == null ? 1 : o.scale;
+    var tx = o.tx || 0, ty = o.ty || 0;
+    var dur = o.duration == null ? 5200 : o.duration;
+    var fromScale = o.fromScale == null ? scale : o.fromScale;
+    var fromTx = o.fromTx == null ? tx : o.fromTx;
+    var fromTy = o.fromTy == null ? ty : o.fromTy;
+
+    var img = shotEls[file];
+    if (!img) {
+      img = document.createElement("img");
+      img.className = "shot";
+      // files containing a "/" are treated as relative to promo.html (e.g. cropped assets);
+      // bare filenames resolve against the shared docs/media folder.
+      img.src = file.indexOf("/") >= 0 ? file : "../../docs/media/" + file;
+      shots.appendChild(img);
+      shotEls[file] = img;
+    }
+    // start pose (no transition for the jump)
+    img.style.setProperty("--kb", "0ms");
+    img.style.transform = "translate(calc(-50% + " + fromTx + "px), calc(-50% + " + fromTy + "px)) scale(" + fromScale + ")";
+    void img.offsetWidth;
+    // animate to target pose (ken burns)
+    img.style.setProperty("--kb", dur + "ms");
+    img.classList.add("show");
+    requestAnimationFrame(function () {
+      img.style.transform = "translate(calc(-50% + " + tx + "px), calc(-50% + " + ty + "px)) scale(" + scale + ")";
+    });
+    return img;
+  };
+  window.hideShots = function () {
+    Object.keys(shotEls).forEach(function (k) { shotEls[k].classList.remove("show"); });
+  };
+  window.hideShot = function (file) { if (shotEls[file]) shotEls[file].classList.remove("show"); };
+
+  // ---------- BACKGROUND / FLOURISH ----------
+  window.setBg = function (css) { bg.style.background = css; };
+  window.setAccent = function (c) { document.documentElement.style.setProperty("--accent", c); };
+
+  // ---------- FX HOOKS ----------
+  window.fadeFromBlack = function () {
+    var fb = document.getElementById("fadeblack");
+    fb.classList.add("on"); void fb.offsetWidth;
+    requestAnimationFrame(function () { fb.classList.remove("on"); });
+  };
+  window.fadeToBlack = function () { document.getElementById("fadeblack").classList.add("on"); };
+
+  window.showApprove = function () { approveBtn.classList.add("show"); };
+  window.pressApprove = function () { approveBtn.classList.add("press"); };
+  window.hideApprove = function () { approveBtn.classList.remove("show","press"); };
+
+  window.showCursor = function (x, y) {
+    cursor.classList.add("show");
+    cursor.style.setProperty("--cdur", "0ms");
+    cursor.style.left = x + "px"; cursor.style.top = y + "px";
+  };
+  window.moveCursor = function (x, y, dur) {
+    cursor.style.setProperty("--cdur", (dur || 1800) + "ms");
+    void cursor.offsetWidth;
+    cursor.style.left = x + "px"; cursor.style.top = y + "px";
+  };
+  window.hideCursor = function () { cursor.classList.remove("show"); };
+
+  window.showStamp = function () { stamp.classList.add("show"); };
+  window.hideStamp = function () { stamp.classList.remove("show"); };
+
+  window.shake = function () { stage.classList.remove("shake"); void stage.offsetWidth; stage.classList.add("shake"); };
+  window.glitch = function () { stage.classList.remove("glitch"); void stage.offsetWidth; stage.classList.add("glitch"); };
+
+  window.showDiffBg = function (drift) {
+    diffbg.classList.add("show");
+    if (drift) diffbg.classList.add("drift");
+  };
+  window.hideDiffBg = function () { diffbg.classList.remove("show","drift"); };
+
+  // ---------- LIVE Q&A ANSWER BUBBLE ----------
+  window.showAnswer = function (q, a) {
+    answer.querySelector(".ans-q").textContent = q || "";
+    answer.querySelector(".ans-a").textContent = a || "";
+    answer.classList.remove("show");
+    void answer.offsetWidth;
+    requestAnimationFrame(function () { answer.classList.add("show"); });
+  };
+  window.hideAnswer = function () { answer.classList.remove("show"); };
+
+  window.showUnderline = function (x, y, w) {
+    underline.style.left = x + "px"; underline.style.top = y + "px";
+    underline.classList.add("wipe");
+    void underline.offsetWidth;
+    underline.style.width = w + "px";
+  };
+  window.hideUnderline = function () { underline.classList.remove("wipe"); underline.style.width = "0"; };
+
+  // build fake diff backdrop content
+  (function fillDiff() {
+    var rows = [
+      ['ctx','  function getCached(userId, key) {'],
+      ['del','-   return store.get(key);'],
+      ['add','+   const ns = userId + "\\u0000" + key;'],
+      ['add','+   const hit = store.get(ns);'],
+      ['add','+   if (hit && hit.exp > now()) return hit.val;'],
+      ['ctx','  }'],
+      ['ctx',''],
+      ['ctx','  function setCached(userId, key, val, ttl) {'],
+      ['add','+   const ns = userId + "\\u0000" + key;'],
+      ['add','+   store.set(ns, { val, exp: now() + ttl });'],
+      ['del','-   store.set(key, val);'],
+      ['ctx','  }'],
+      ['ctx',''],
+      ['add','+ export function evictExpired() {'],
+      ['add','+   for (const [k, v] of store) {'],
+      ['add','+     if (v.exp <= now()) store.delete(k);'],
+      ['add','+   }'],
+      ['add','+ }'],
+      ['ctx','  import { now } from "../clock.js";'],
+      ['ctx','  const store = new Map();'],
+    ];
+    var html = "";
+    for (var r = 0; r < 3; r++) {
+      rows.forEach(function (row) {
+        html += '<div class="' + row[0] + '">' + row[1].replace(/</g,'&lt;') + '</div>';
+      });
+    }
+    diffbg.innerHTML = html;
+  })();
+
+  window.__promoReady = true;
+})();
+</script>
+</body>
+</html>
